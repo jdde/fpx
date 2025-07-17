@@ -1,0 +1,14 @@
+name: fpx_cli
+description: A lean CLI tool to scaffold Flutter components using Mason.
+version: 0.1.0
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+
+dependencies:
+  mason: ^0.1.1
+  args: ^2.4.2
+  path: ^1.8.3
+  yaml: ^3.1.2
+
+executables:
+  fpx: bin/fpx.dart
