@@ -123,8 +123,6 @@ example-ui-kit
 
 internal-team/bricks
 
-unping/unping-ui
-
 ❤️ Why fpx?
 🧠 Local-first: no hidden magic, fully editable code
 
