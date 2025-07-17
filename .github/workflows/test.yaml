@@ -1,0 +1,77 @@
+name: Test and Coverage
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - bin/**
+      - test/**
+      - pubspec.yaml
+      - pubspec.lock
+      - .github/workflows/test.yaml
+
+  push:
+    branches:
+      - main
+    paths:
+      - bin/**
+      - test/**
+      - pubspec.yaml
+      - pubspec.lock
+      - .github/workflows/test.yaml
+
+jobs:
+  test:
+    name: Test on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    steps:
+      - name: 📚 Git Checkout
+        uses: actions/checkout@v4.2.2
+
+      - name: 🎯 Setup Dart
+        uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      - name: 📦 Install Dependencies
+        run: dart pub get
+
+      - name: 🧪 Run Tests
+        run: dart test --concurrency=1
+
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - name: 📚 Git Checkout
+        uses: actions/checkout@v4.2.2
+
+      - name: 🎯 Setup Dart
+        uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      - name: 📦 Install Dependencies
+        run: dart pub get
+
+      - name: 🧪 Run Tests with Coverage
+        run: |
+          dart pub global activate coverage 1.2.0
+          dart test --concurrency=1 --coverage=coverage
+          dart pub global run coverage:format_coverage --lcov --in=coverage --out=assets/lcov.info --packages=.dart_tool/package_config.json --report-on=bin
+
+      - name: 📊 Check Code Coverage
+        uses: VeryGoodOpenSource/very_good_coverage@v3
+        with:
+          path: assets/lcov.info
+          min_coverage: 80
+          exclude: '**/*_test.dart **/*.g.dart **/*.freezed.dart'
