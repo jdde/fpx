@@ -60,7 +60,7 @@ void main() {
       expect(result.exitCode, equals(0));
       
       final stderr = result.stderr as String;
-      expect(stderr, contains('⚠️  mason.yaml already exists'));
+      expect(stderr, contains('mason.yaml already exists'));
       
       // Verify original content is preserved
       final content = File('mason.yaml').readAsStringSync();
@@ -81,7 +81,11 @@ void main() {
       expect(result.exitCode, equals(255));
       
       final stderr = result.stderr as String;
-      expect(stderr, contains('FileSystemException'));
+      // Check for either FileSystemException (Unix) or PathAccessException (Windows)
+      expect(stderr, anyOf(
+        contains('FileSystemException'),
+        contains('PathAccessException'),
+      ));
     });
 
     test('creates mason.yaml in subdirectory', () async {
