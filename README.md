@@ -1,6 +1,6 @@
 # 🧩 Flutter Paste eXpress - a fast way to clone compatible templated bricks into your flutter project
 
-**fpx** is a developer-first CLI tool that helps you **install, scaffold, and customize Flutter components from any source** — instantly.  
+**fpx** is a lightweit developer-first CLI tool that helps you **install, scaffold, and customize Flutter components from any source** — instantly. Pull mason bricks from anywhere.
 It works like `npx` for Flutter: you run a single command and get ready-to-edit code in your project.
 
 > ✨ **fpx = Flutter Paste eXpress**  
@@ -15,7 +15,7 @@ As a **Flutter developer**, you can use `fpx` to scaffold buttons, cards, modals
 ### 🔧 Getting Started
 
 ```bash
-dart pub global activate fpx_cli
+dart pub global activate fpx
 ```
 
 Then in your Flutter project:
@@ -117,3 +117,28 @@ Host them on GitHub or internal Git
 (Optional) Submit to the fpx registry
 
 ## 📦 Coming soon: fpx publish to share your components with the community
+
+🛠 Example Repos
+example-ui-kit
+
+internal-team/bricks
+
+unping/unping-ui
+
+❤️ Why fpx?
+🧠 Local-first: no hidden magic, fully editable code
+
+🧱 Component-driven: scaffold exactly what you need
+
+⚙️ Mason-powered: works with existing Dart tools
+
+🚀 Fast and flexible: from Git or from a growing ecosystem
+
+📮 Feedback, Issues, Contributions
+We’d love your help evolving the Flutter component ecosystem.
+
+File issues or feature requests
+
+Publish your own components
+
+Contribute improvements to fpx
