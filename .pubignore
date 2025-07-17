@@ -1,0 +1,17 @@
+# Test fixtures - these are needed for development but not for published package
+test/fixtures/
+
+# Coverage files
+coverage/
+*.lcov
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
