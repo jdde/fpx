@@ -27,11 +27,14 @@ dart pub global activate --source=path <path to this package>
 ## Usage
 
 ```sh
-# Sample command
-$ fpx sample
+# Add a component (requires mason.yaml configuration)
+$ fpx add button --name my_button
 
-# Sample command option
-$ fpx sample --cyan
+# Initialize mason.yaml file
+$ fpx init
+
+# List available bricks
+$ fpx list
 
 # Show CLI version
 $ fpx --version
