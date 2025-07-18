@@ -71,6 +71,9 @@ jobs:
       - name: 🧪 Run Tests with Coverage
         run: dart test --coverage=coverage
 
+      - name: 📋 Format Coverage
+        run: dart pub global activate coverage && dart pub global run coverage:format_coverage --lcov --in=coverage --out=coverage/lcov.info --report-on=lib
+
       - name: 📊 Check Code Coverage
         uses: VeryGoodOpenSource/very_good_coverage@v3
         with:
