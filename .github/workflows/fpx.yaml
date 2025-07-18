@@ -27,6 +27,28 @@ jobs:
   build:
     uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/dart_package.yml@v1
 
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📚 Git Checkout
+        uses: actions/checkout@v4
+
+      - name: 🎯 Setup Dart
+        uses: dart-lang/setup-dart@v1
+        with:
+          sdk: "stable"
+
+      - name: 📦 Install Dependencies
+        run: dart pub get
+
+      - name: 🧪 Run Tests
+        run: dart test --coverage=coverage
+
+      - name: 📊 Check Code Coverage
+        uses: VeryGoodOpenSource/very_good_coverage@v3
+        with:
+          path: coverage/lcov.info
+
   spell-check:
     uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/spell_check.yml@v1
     with:
@@ -40,7 +62,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: 📚 Git Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
       - name: 🎯 Setup Dart
         uses: dart-lang/setup-dart@v1
@@ -48,8 +70,7 @@ jobs:
           sdk: "stable"
 
       - name: 📦 Install Dependencies
-        run: |
-          dart pub get
+        run: dart pub get
 
       - name: 🔎 Verify version
         run: dart run test --run-skipped -t version-verify
