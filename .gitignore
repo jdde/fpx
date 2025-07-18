@@ -8,7 +8,9 @@ pubspec.lock
 
 # Files generated during tests
 .test_coverage.dart
-coverage/
+coverage/*
+!coverage/test/.gitkeep
+!coverage/test/
 .test_runner.dart
 
 # Android studio and IntelliJ
