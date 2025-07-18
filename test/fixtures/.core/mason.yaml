@@ -1,0 +1,3 @@
+bricks:
+  test_brick:
+    path: ./non-existent

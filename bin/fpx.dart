@@ -137,16 +137,18 @@ Future<void> _handleListCommand(Logger logger) async {
   
   final masonYaml = await _loadMasonYaml();
   
-  final bricks = masonYaml?['bricks'] as Map<String, dynamic>?;
-  if (bricks == null || bricks.isEmpty) {
+  final bricksNode = masonYaml?['bricks'];
+  if (bricksNode == null || (bricksNode is Map && bricksNode.isEmpty)) {
     logger.info('📋 No bricks configured in mason.yaml yet');
     logger.info('💡 Add bricks to mason.yaml or use --source option with fpx add');
     return;
   }
 
   logger.info('Available bricks:');
-  for (final brickName in bricks.keys) {
-    logger.detail('  $brickName');
+  if (bricksNode is Map) {
+    for (final brickName in bricksNode.keys) {
+      logger.info('  $brickName');
+    }
   }
 }
 
@@ -166,19 +168,21 @@ Future<Brick> _findBrick(String component, String? source, Logger logger) async 
   // Try to find brick in mason.yaml
   final masonYaml = await _loadMasonYaml();
   if (masonYaml != null) {
-    final bricks = masonYaml['bricks'] as Map<String, dynamic>?;
-    if (bricks != null && bricks.containsKey(component)) {
-      final brickConfig = bricks[component] as Map<String, dynamic>;
+    final bricksNode = masonYaml['bricks'];
+    if (bricksNode is Map && bricksNode.containsKey(component)) {
+      final brickConfig = bricksNode[component];
       
       // Handle different brick source types
-      if (brickConfig.containsKey('git')) {
-        final gitConfig = brickConfig['git'] as Map<String, dynamic>;
-        final url = gitConfig['url'] as String;
-        final gitPath = gitConfig.containsKey('path') 
-            ? GitPath(url, path: gitConfig['path'] as String)
-            : GitPath(url);
-        return Brick.git(gitPath);
-      } else if (brickConfig.containsKey('path')) {
+      if (brickConfig is Map && brickConfig.containsKey('git')) {
+        final gitConfig = brickConfig['git'];
+        if (gitConfig is Map) {
+          final url = gitConfig['url'] as String;
+          final gitPath = gitConfig.containsKey('path') 
+              ? GitPath(url, path: gitConfig['path'] as String)
+              : GitPath(url);
+          return Brick.git(gitPath);
+        }
+      } else if (brickConfig is Map && brickConfig.containsKey('path')) {
         final brickPath = brickConfig['path'] as String;
         return Brick.path(brickPath);
       }
