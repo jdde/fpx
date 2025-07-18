@@ -67,11 +67,11 @@ jobs:
         run: |
           dart pub global activate coverage 1.2.0
           dart test --concurrency=1 --coverage=coverage
-          dart pub global run coverage:format_coverage --lcov --in=coverage --out=coverage/lcov.info --packages=.dart_tool/package_config.json --report-on=lib
+          dart pub global run coverage:format_coverage --lcov --in=coverage --out=assets/lcov.info --packages=.dart_tool/package_config.json --report-on=bin
 
       - name: 📊 Check Code Coverage
         uses: VeryGoodOpenSource/very_good_coverage@v3
         with:
-          path: coverage/lcov.info
+          path: assets/lcov.info
           min_coverage: 80
           exclude: '**/*_test.dart **/*.g.dart **/*.freezed.dart'
