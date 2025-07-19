@@ -21,12 +21,6 @@ on:
       - "pubspec.yaml"
 
 jobs:
-  semantic-pull-request:
-    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/semantic_pull_request.yml@v1
-
-  build:
-    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/dart_package.yml@v1
-
   test:
     name: Test on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
