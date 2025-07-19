@@ -12,10 +12,14 @@ void main() {
     late Logger logger;
     late InitCommand command;
     late Directory testDir;
+    late Directory originalDir;
 
     setUp(() async {
       logger = _MockLogger();
       command = InitCommand(logger: logger);
+      
+      // Save original directory
+      originalDir = Directory.current;
       
       // Create a temporary test directory
       testDir = await Directory.systemTemp.createTemp('fpx_init_test_');
@@ -29,6 +33,9 @@ void main() {
     });
 
     tearDown(() async {
+      // Restore original directory first
+      Directory.current = originalDir;
+      
       // Clean up temporary directory
       if (await testDir.exists()) {
         await testDir.delete(recursive: true);

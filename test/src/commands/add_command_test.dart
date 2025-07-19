@@ -13,6 +13,7 @@ void main() {
     late Logger logger;
     late AddCommand command;
     late Directory testDir;
+    late Directory originalDir;
     late CommandRunner<int> commandRunner;
 
     setUp(() async {
@@ -22,6 +23,9 @@ void main() {
       // Create a command runner to properly parse arguments
       commandRunner = CommandRunner<int>('test', 'Test runner')
         ..addCommand(command);
+      
+      // Save original directory
+      originalDir = Directory.current;
       
       // Create a temporary test directory
       testDir = await Directory.systemTemp.createTemp('fpx_add_test_');
@@ -35,6 +39,9 @@ void main() {
     });
 
     tearDown(() async {
+      // Restore original directory first
+      Directory.current = originalDir;
+      
       // Clean up temporary directory
       if (await testDir.exists()) {
         await testDir.delete(recursive: true);
