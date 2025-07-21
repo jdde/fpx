@@ -135,9 +135,10 @@ class AddCommand extends Command<int> {
         final result = searchResults[i];
         _logger.info('  ${i + 1}. ${result.repositoryName}/${result.fullPath}');
       }
+      _logger.info('  0. Cancel');
       
-      // For now, use the first one, but in a real CLI you'd prompt the user
-      final selected = searchResults.first;
+      // Prompt user to select which brick to use
+      final selected = await _promptUserSelection(searchResults);
       _logger.info('Using: ${selected.repositoryName}/${selected.fullPath}');
       return selected.brick;
     }
@@ -247,6 +248,36 @@ bricks:
     } catch (e) {
       // If we can't read brick variables, continue with provided vars
       _logger.detail('Could not read brick variables: $e');
+    }
+  }
+
+  Future<BrickSearchResult> _promptUserSelection(List<BrickSearchResult> searchResults) async {
+    while (true) {
+      stdout.write('\nPlease select a brick (1-${searchResults.length}, or 0 to cancel): ');
+      final input = stdin.readLineSync();
+      
+      if (input == null || input.trim().isEmpty) {
+        _logger.err('Please enter a valid selection.');
+        continue;
+      }
+      
+      final selection = int.tryParse(input.trim());
+      if (selection == null) {
+        _logger.err('Invalid input. Please enter a number.');
+        continue;
+      }
+      
+      if (selection == 0) {
+        _logger.info('Operation cancelled.');
+        throw Exception('User cancelled brick selection');
+      }
+      
+      if (selection < 1 || selection > searchResults.length) {
+        _logger.err('Invalid selection. Please enter a number between 1 and ${searchResults.length}, or 0 to cancel.');
+        continue;
+      }
+      
+      return searchResults[selection - 1];
     }
   }
 }
