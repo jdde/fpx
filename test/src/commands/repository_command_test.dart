@@ -42,7 +42,6 @@ void main() {
           'repository', 'add',
           '--name=test-repo',
           '--url=https://github.com/test/repo.git',
-          '--path=bricks'
         ]);
 
         expect(result, equals(0));
