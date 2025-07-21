@@ -8,6 +8,6 @@
 #     path: <path_to_bricks_in_repo>
 
 repositories:
-  felangel:
+  unping-ui:
     url: https://github.com/Unping/unping-ui
     path: bricks
