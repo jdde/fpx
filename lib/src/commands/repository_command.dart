@@ -5,6 +5,21 @@ import 'package:fpx/src/services/repository_service.dart';
 import 'package:mason_logger/mason_logger.dart';
 import 'package:yaml/yaml.dart';
 
+/// Utility function to convert YamlMap to Map<String, dynamic>
+dynamic _convertYamlToMap(dynamic yamlData) {
+  if (yamlData is Map) {
+    final result = <String, dynamic>{};
+    for (final entry in yamlData.entries) {
+      result[entry.key.toString()] = _convertYamlToMap(entry.value);
+    }
+    return result;
+  } else if (yamlData is List) {
+    return yamlData.map((item) => _convertYamlToMap(item)).toList();
+  } else {
+    return yamlData;
+  }
+}
+
 /// {@template repository_command}
 /// A [Command] to manage brick repositories.
 /// {@endtemplate}
@@ -181,7 +196,7 @@ class RepositoryAddCommand extends Command<int> {
       final content = await configFile.readAsString();
       final yamlMap = loadYaml(content);
       if (yamlMap is Map) {
-        return Map<String, dynamic>.from(yamlMap);
+        return _convertYamlToMap(yamlMap) as Map<String, dynamic>;
       }
       return <String, dynamic>{};
     } catch (e) {
@@ -295,7 +310,7 @@ class RepositoryRemoveCommand extends Command<int> {
       final content = await configFile.readAsString();
       final yamlMap = loadYaml(content);
       if (yamlMap is Map) {
-        return Map<String, dynamic>.from(yamlMap);
+        return _convertYamlToMap(yamlMap) as Map<String, dynamic>;
       }
       return <String, dynamic>{};
     } catch (e) {
@@ -403,7 +418,7 @@ class RepositoryListCommand extends Command<int> {
       final content = await configFile.readAsString();
       final yamlMap = loadYaml(content);
       if (yamlMap is Map) {
-        return Map<String, dynamic>.from(yamlMap);
+        return _convertYamlToMap(yamlMap) as Map<String, dynamic>;
       }
       return <String, dynamic>{};
     } catch (e) {
