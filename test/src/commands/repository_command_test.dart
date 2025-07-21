@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:args/command_runner.dart';
 import 'package:fpx/src/commands/repository_command.dart';
+import 'package:fpx/src/services/repository_service.dart';
 import 'package:mason_logger/mason_logger.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:test/test.dart';
@@ -47,7 +48,7 @@ void main() {
         expect(result, equals(0));
 
         // Check config file was created
-        final configFile = File('.fpx_repositories.yaml');
+        final configFile = File(RepositoryService.configFileName);
         expect(configFile.existsSync(), isTrue);
 
         final content = configFile.readAsStringSync();
@@ -65,7 +66,7 @@ void main() {
 
         expect(result, equals(0));
 
-        final configFile = File('.fpx_repositories.yaml');
+        final configFile = File(RepositoryService.configFileName);
         final content = configFile.readAsStringSync();
         expect(content, contains('path: bricks'));
       });
@@ -128,7 +129,7 @@ void main() {
         expect(result, equals(0));
 
         // Verify config is updated
-        final configFile = File('.fpx_repositories.yaml');
+        final configFile = File(RepositoryService.configFileName);
         if (configFile.existsSync()) {
           final content = configFile.readAsStringSync();
           expect(content, isNot(contains('test-repo:')));

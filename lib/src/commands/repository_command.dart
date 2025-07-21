@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:args/command_runner.dart';
+import 'package:fpx/src/services/repository_service.dart';
 import 'package:mason_logger/mason_logger.dart';
 import 'package:yaml/yaml.dart';
 
@@ -149,7 +150,7 @@ class RepositoryAddCommand extends Command<int> {
   }
 
   Future<Map<String, dynamic>> _loadRepositoryConfig() async {
-    final configFile = File('.fpx_repositories.yaml');
+    final configFile = File(RepositoryService.configFileName);
     if (!await configFile.exists()) {
       return <String, dynamic>{};
     }
@@ -167,7 +168,7 @@ class RepositoryAddCommand extends Command<int> {
   }
 
   Future<void> _saveRepositoryConfig(Map<String, dynamic> config) async {
-    final configFile = File('.fpx_repositories.yaml');
+    final configFile = File(RepositoryService.configFileName);
     
     const header = '''# fpx repository configuration
 # This file manages remote repositories for Mason bricks
@@ -263,7 +264,7 @@ class RepositoryRemoveCommand extends Command<int> {
   }
 
   Future<Map<String, dynamic>> _loadRepositoryConfig() async {
-    final configFile = File('.fpx_repositories.yaml');
+    final configFile = File(RepositoryService.configFileName);
     if (!await configFile.exists()) {
       return <String, dynamic>{};
     }
@@ -281,7 +282,7 @@ class RepositoryRemoveCommand extends Command<int> {
   }
 
   Future<void> _saveRepositoryConfig(Map<String, dynamic> config) async {
-    final configFile = File('.fpx_repositories.yaml');
+    final configFile = File(RepositoryService.configFileName);
     
     const header = '''# fpx repository configuration
 # This file manages remote repositories for Mason bricks
@@ -370,7 +371,7 @@ class RepositoryListCommand extends Command<int> {
   }
 
   Future<Map<String, dynamic>> _loadRepositoryConfig() async {
-    final configFile = File('.fpx_repositories.yaml');
+    final configFile = File(RepositoryService.configFileName);
     if (!await configFile.exists()) {
       return <String, dynamic>{};
     }

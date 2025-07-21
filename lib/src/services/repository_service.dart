@@ -5,7 +5,7 @@ import 'package:yaml/yaml.dart';
 
 /// Service for managing and searching brick repositories.
 class RepositoryService {
-  static const String _configFileName = '.fpx_repositories.yaml';
+  static const String configFileName = '.fpx_repositories.yaml';
   static const String _userConfigFileName = '.fpx_repositories.local.yaml';
 
   /// Load repository configuration from file.
@@ -154,7 +154,7 @@ class RepositoryService {
 
   /// Load default repository configuration.
   Future<Map<String, dynamic>> _loadDefaultRepositoryConfig() async {
-    final defaultConfigFile = File(_configFileName);
+    final defaultConfigFile = File(configFileName);
     if (!await defaultConfigFile.exists()) {
       return <String, dynamic>{};
     }
@@ -192,7 +192,7 @@ class RepositoryService {
 
   /// Save repository configuration to file.
   Future<void> _saveRepositoryConfig(Map<String, dynamic> config) async {
-    final configFile = File(_configFileName);
+    final configFile = File(configFileName);
     
     const header = '''# fpx repository configuration
 # This file manages remote repositories for Mason bricks
