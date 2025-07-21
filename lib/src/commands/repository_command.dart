@@ -42,8 +42,8 @@ class RepositoryAddCommand extends Command<int> {
       ..addOption(
         'name',
         abbr: 'n',
-        help: 'Repository name/alias',
-        mandatory: true,
+        help: 'Repository name/alias (auto-generated from URL if not provided)',
+        mandatory: false,
       )
       ..addOption(
         'url',
@@ -60,14 +60,17 @@ class RepositoryAddCommand extends Command<int> {
   String get name => 'add';
 
   @override
-  String get invocation => 'fpx repository add --name <name> --url <url>';
+  String get invocation => 'fpx repository add [--name <name>] --url <url>';
 
   final Logger _logger;
 
   @override
   Future<int> run() async {
-    final repositoryName = argResults!['name'] as String;
     final repositoryUrl = argResults!['url'] as String;
+    final providedName = argResults!['name'] as String?;
+    
+    // Parse repository name from URL if not provided
+    final repositoryName = providedName ?? _parseRepositoryName(repositoryUrl);
 
     try {
       final parsedRepo = _parseRepositoryUrl(repositoryUrl);
@@ -81,6 +84,25 @@ class RepositoryAddCommand extends Command<int> {
     } catch (e) {
       _logger.err('❌ Failed to add repository: $e');
       return ExitCode.software.code;
+    }
+  }
+
+  /// Parses a repository name from the URL (first part after top level domain)
+  String _parseRepositoryName(String url) {
+    try {
+      final uri = Uri.parse(url);
+      final pathSegments = uri.pathSegments;
+      
+      if (pathSegments.isNotEmpty) {
+        // Get the first path segment (repository owner/organization)
+        return pathSegments[0];
+      }
+      
+      // Fallback: use the host without www prefix
+      return uri.host.replaceFirst('www.', '');
+    } catch (e) {
+      // If parsing fails, use a sanitized version of the URL
+      return url.replaceAll(RegExp(r'[^a-zA-Z0-9\-_]'), '_');
     }
   }
 
@@ -344,10 +366,11 @@ class RepositoryListCommand extends Command<int> {
 
       if (repositories == null || repositories.isEmpty) {
         _logger.info('📋 No repositories configured yet');
-        _logger.info('💡 Add a repository with: fpx repository add --name <name> --url <url>');
+        _logger.info('💡 Add a repository with: fpx repository add --url <url> [--name <name>]');
         _logger.info('');
         _logger.info('Example repositories:');
-        _logger.info('  fpx repository add --name Unping-UI --url https://github.com/Unping/unping-ui');
+        _logger.info('  fpx repository add --url https://github.com/Unping/unping-ui');
+        _logger.info('  fpx repository add --name my-bricks --url https://github.com/Unping/unping-ui');
         return ExitCode.success.code;
       }
 
