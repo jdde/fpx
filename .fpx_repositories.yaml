@@ -1,0 +1,13 @@
+# fpx repository configuration
+# This file manages remote repositories for Mason bricks
+# 
+# Format:
+# repositories:
+#   <name>:
+#     url: <git_url>
+#     path: <path_to_bricks_in_repo>
+
+repositories:
+  felangel:
+    url: https://github.com/Unping/unping-ui
+    path: bricks

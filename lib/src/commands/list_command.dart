@@ -4,6 +4,8 @@ import 'package:args/command_runner.dart';
 import 'package:mason_logger/mason_logger.dart';
 import 'package:yaml/yaml.dart';
 
+import '../services/repository_service.dart';
+
 /// {@template list_command}
 /// A [Command] to list available bricks.
 /// {@endtemplate}
@@ -11,7 +13,9 @@ class ListCommand extends Command<int> {
   /// {@macro list_command}
   ListCommand({
     required Logger logger,
-  }) : _logger = logger;
+    RepositoryService? repositoryService,
+  })  : _logger = logger,
+        _repositoryService = repositoryService ?? RepositoryService();
 
   @override
   String get description => 'List available bricks';
@@ -20,6 +24,7 @@ class ListCommand extends Command<int> {
   String get name => 'list';
 
   final Logger _logger;
+  final RepositoryService _repositoryService;
 
   @override
   Future<int> run() async {
@@ -27,19 +32,36 @@ class ListCommand extends Command<int> {
     await _ensureMasonYamlExists();
 
     final masonYaml = await _loadMasonYaml();
+    final repositories = await _repositoryService.getRepositories();
 
+    // Show local mason.yaml bricks
     final bricksNode = masonYaml?['bricks'];
-    if (bricksNode == null || (bricksNode is Map && bricksNode.isEmpty)) {
-      _logger.info('📋 No bricks configured in mason.yaml yet');
-      _logger.info('💡 Add bricks to mason.yaml or use --source option with fpx add');
-      return ExitCode.success.code;
-    }
-
-    _logger.info('Available bricks:');
-    if (bricksNode is Map) {
+    if (bricksNode != null && bricksNode is Map && bricksNode.isNotEmpty) {
+      _logger.info('Local bricks (mason.yaml):');
       for (final brickName in bricksNode.keys) {
         _logger.info('  $brickName');
       }
+      _logger.info('');
+    }
+
+    // Show configured repositories
+    if (repositories.isNotEmpty) {
+      _logger.info('Configured repositories:');
+      for (final repo in repositories.values) {
+        _logger.info('  ${repo.name}: ${repo.url}');
+      }
+      _logger.info('');
+      _logger.info('💡 Use "fpx add <brick-name>" to search all repositories');
+      _logger.info('   Or "fpx add @repo/<brick-name>" for a specific repository');
+    }
+
+    // Show help if nothing is configured
+    if ((bricksNode == null || (bricksNode is Map && bricksNode.isEmpty)) &&
+        repositories.isEmpty) {
+      _logger.info('📋 No bricks or repositories configured yet');
+      _logger.info('💡 Add bricks to mason.yaml or configure repositories:');
+      _logger.info('   fpx repository add --name <name> --url <url>');
+      _logger.info('   fpx init  # to create mason.yaml and default repositories');
     }
 
     return ExitCode.success.code;

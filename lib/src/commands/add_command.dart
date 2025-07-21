@@ -5,6 +5,8 @@ import 'package:mason/mason.dart';
 import 'package:path/path.dart' as path;
 import 'package:yaml/yaml.dart';
 
+import '../services/repository_service.dart';
+
 /// {@template add_command}
 /// A [Command] to add a component using Mason bricks.
 /// {@endtemplate}
@@ -12,7 +14,9 @@ class AddCommand extends Command<int> {
   /// {@macro add_command}
   AddCommand({
     required Logger logger,
-  }) : _logger = logger {
+    RepositoryService? repositoryService,
+  })  : _logger = logger,
+        _repositoryService = repositoryService ?? RepositoryService() {
     argParser
       ..addOption(
         'name',
@@ -43,6 +47,7 @@ class AddCommand extends Command<int> {
   String get invocation => 'fpx add <component> [options]';
 
   final Logger _logger;
+  final RepositoryService _repositoryService;
 
   @override
   Future<int> run() async {
@@ -115,7 +120,29 @@ class AddCommand extends Command<int> {
       }
     }
 
-    // Try to find brick in mason.yaml
+    // Search in configured repositories first
+    final searchResults = await _repositoryService.findBrick(component);
+    
+    if (searchResults.length == 1) {
+      // Single match found
+      final result = searchResults.first;
+      _logger.info('Using brick "${result.brickName}" from repository "${result.repositoryName}"');
+      return result.brick;
+    } else if (searchResults.length > 1) {
+      // Multiple matches found, let user choose
+      _logger.warn('Multiple bricks found with name "$component":');
+      for (var i = 0; i < searchResults.length; i++) {
+        final result = searchResults[i];
+        _logger.info('  ${i + 1}. ${result.repositoryName}/${result.fullPath}');
+      }
+      
+      // For now, use the first one, but in a real CLI you'd prompt the user
+      final selected = searchResults.first;
+      _logger.info('Using: ${selected.repositoryName}/${selected.fullPath}');
+      return selected.brick;
+    }
+
+    // Try to find brick in mason.yaml as fallback
     final masonYaml = await _loadMasonYaml();
     if (masonYaml != null) {
       final bricksNode = masonYaml['bricks'];
@@ -139,11 +166,24 @@ class AddCommand extends Command<int> {
       }
     }
 
-    // If no brick found, suggest creating mason.yaml
-    throw Exception(
-      'Brick "$component" not found. Please add it to mason.yaml or use --source option.\n'
-      'Run "fpx init" to create a mason.yaml file.',
-    );
+    // No brick found anywhere
+    final repositories = await _repositoryService.getRepositories();
+    if (repositories.isEmpty) {
+      throw Exception(
+        'Brick "$component" not found. No repositories configured.\n'
+        'Add a repository with: fpx repository add --name <name> --url <url>\n'
+        'Or add the brick to mason.yaml, or use --source option.\n'
+        'Run "fpx init" to create a mason.yaml file.',
+      );
+    } else {
+      final repoList = repositories.keys.join(', ');
+      throw Exception(
+        'Brick "$component" not found in configured repositories: $repoList\n'
+        'Try using a specific repository: fpx add @repo/$component\n'
+        'Or add the brick to mason.yaml, or use --source option.\n'
+        'Run "fpx repository list" to see available repositories.',
+      );
+    }
   }
 
   Future<Map<String, dynamic>?> _loadMasonYaml() async {

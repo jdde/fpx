@@ -2,6 +2,7 @@ import 'package:args/args.dart';
 import 'package:args/command_runner.dart';
 import 'package:cli_completion/cli_completion.dart';
 import 'package:fpx/src/commands/commands.dart';
+import 'package:fpx/src/services/repository_service.dart';
 import 'package:fpx/src/version.dart';
 import 'package:mason_logger/mason_logger.dart';
 import 'package:pub_updater/pub_updater.dart';
@@ -22,8 +23,10 @@ class FpxCommandRunner extends CompletionCommandRunner<int> {
   FpxCommandRunner({
     Logger? logger,
     PubUpdater? pubUpdater,
+    RepositoryService? repositoryService,
   })  : _logger = logger ?? Logger(),
         _pubUpdater = pubUpdater ?? PubUpdater(),
+        _repositoryService = repositoryService ?? RepositoryService(),
         super(executableName, description) {
     // Add root options and flags
     argParser
@@ -39,9 +42,10 @@ class FpxCommandRunner extends CompletionCommandRunner<int> {
       );
 
     // Add sub commands
-    addCommand(AddCommand(logger: _logger));
-    addCommand(InitCommand(logger: _logger));
-    addCommand(ListCommand(logger: _logger));
+    addCommand(AddCommand(logger: _logger, repositoryService: _repositoryService));
+    addCommand(InitCommand(logger: _logger, repositoryService: _repositoryService));
+    addCommand(ListCommand(logger: _logger, repositoryService: _repositoryService));
+    addCommand(RepositoryCommand(logger: _logger));
     addCommand(UpdateCommand(logger: _logger, pubUpdater: _pubUpdater));
   }
 
@@ -50,6 +54,7 @@ class FpxCommandRunner extends CompletionCommandRunner<int> {
 
   final Logger _logger;
   final PubUpdater _pubUpdater;
+  final RepositoryService _repositoryService;
 
   @override
   Future<int> run(Iterable<String> args) async {
