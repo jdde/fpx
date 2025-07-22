@@ -73,15 +73,23 @@ void main() {
         expect(content, contains('path: bricks'));
       });
 
-      test('fails when name is missing', () async {
-        expect(
-          () => commandRunner.run([
-            'repository',
-            'add',
-            '--url=https://github.com/test/repo.git',
-          ]),
-          throwsA(isA<UsageException>()),
-        );
+      test('auto-generates name when not provided', () async {
+        final result = await commandRunner.run([
+          'repository',
+          'add',
+          '--url=https://github.com/test/repo.git',
+        ]);
+
+        expect(result, equals(0));
+
+        // Check config file was created with auto-generated name
+        final configFile = File(RepositoryService.configFileName);
+        expect(configFile.existsSync(), isTrue);
+
+        final content = configFile.readAsStringSync();
+        expect(content, contains('test:')); // First path segment should be 'test'
+        expect(content, contains('url: https://github.com/test/repo.git'));
+        expect(content, contains('path: bricks'));
       });
 
       test('fails when url is missing', () async {
@@ -91,7 +99,7 @@ void main() {
             'add',
             '--name=test-repo',
           ]),
-          throwsA(isA<UsageException>()),
+          throwsA(isA<ArgumentError>()),
         );
       });
     });
@@ -166,7 +174,7 @@ void main() {
       test('fails when name is missing', () async {
         expect(
           () => commandRunner.run(['repository', 'remove']),
-          throwsA(isA<UsageException>()),
+          throwsA(isA<ArgumentError>()),
         );
       });
     });
