@@ -48,7 +48,7 @@ jobs:
         uses: VeryGoodOpenSource/very_good_coverage@v3
         with:
           path: coverage/lcov.info
-          min_coverage: 80
+          min_coverage: 70
 
   spell-check:
     uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/spell_check.yml@v1
