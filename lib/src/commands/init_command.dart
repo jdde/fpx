@@ -56,7 +56,7 @@ bricks:
   # Example:
   # button:
   #   git:
-  #     url: https://github.com/felangel/mason.git
+  #     url: https://github.com/unping/unping-ui.git
   #     path: bricks/button
   # 
   # widget:

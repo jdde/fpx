@@ -138,7 +138,7 @@ class RepositoryAddCommand extends Command<int> {
 
         // Check for tree/branch/path structure
         if (pathSegments.length >= 4 && pathSegments[2] == 'tree') {
-          // URL like: https://github.com/felangel/mason/tree/master/bricks
+          // URL like: https://github.com/unping/unping-ui/tree/master/bricks
           final branchAndPath = pathSegments.skip(3).join('/');
           final pathParts = branchAndPath.split('/');
 
@@ -151,7 +151,7 @@ class RepositoryAddCommand extends Command<int> {
 
         // Check for blob/branch/path structure (single file)
         if (pathSegments.length >= 4 && pathSegments[2] == 'blob') {
-          // URL like: https://github.com/felangel/mason/blob/master/bricks/greeting/brick.yaml
+          // URL like: https://github.com/unping/unping-ui.git/blob/master/bricks/greeting/brick.yaml
           final branchAndPath = pathSegments.skip(3).join('/');
           final pathParts = branchAndPath.split('/');
 

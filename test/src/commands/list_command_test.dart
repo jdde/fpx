@@ -144,7 +144,7 @@ some_other_config: value
 bricks:
   button:
     git:
-      url: https://github.com/felangel/mason.git
+      url: https://github.com/unping/unping-ui.git
       path: bricks/button
   widget:
     path: ./bricks/widget

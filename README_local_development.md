@@ -53,7 +53,7 @@ dart run bin/fpx.dart --help
 # Test repository management
 dart run bin/fpx.dart repository add --url https://github.com/unping/unping-ui
 dart run bin/fpx.dart repository list
-dart run bin/fpx.dart repository remove --name felangel
+dart run bin/fpx.dart repository remove --name unping-ui
 
 # Test other commands
 dart run bin/fpx.dart init
