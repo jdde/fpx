@@ -1,4 +1,4 @@
-## fpx
+## fpx - Flutter Paste [x || button || table || badge || datepicker]
 
 ![coverage][coverage_badge]
 [![License: MIT][license_badge]][license_link]
@@ -8,22 +8,32 @@
 
 CLI template by the [Very Good CLI][very_good_cli_link] 🤖
 
-Lightweight Widget focused Mason brick cli.
+Lightweight Widget paste CLI with support for remote brick repositories.
+
+### Features
+
+- 🧱 **Mason Brick Management**: Paste Mason bricks locally
+- 📦 **Repository Support**: Add and manage remote brick repositories  
+- 🔄 **Auto-detection**: Automatically parses GitHub repository structures
+- ⚡ **Fast Setup**: Quick initialization and brick listing
+- 🎯 **Widget Focused**: Single-Command Widget pasting
 
 ---
 
 ## Getting Started 🚀
 
-If the CLI application is available on [pub](https://pub.dev), activate globally via:
+Install FPX globally via pub.dev:
 
 ```sh
 dart pub global activate fpx
 ```
 
-Or locally via:
+Or install from source:
 
 ```sh
-dart pub global activate --source=path <path to this package>
+git clone https://github.com/jdde/fpx.git
+cd fpx
+dart pub global activate --source=path .
 ```
 
 ## Usage
@@ -38,6 +48,14 @@ $ fpx init
 # List available bricks
 $ fpx list
 
+# Update bricks from repositories
+$ fpx update
+
+# Repository Management
+$ fpx repository add --url <git_url> [--name <alias>]
+$ fpx repository list
+$ fpx repository remove --name <alias>
+
 # Show CLI version
 $ fpx --version
 
@@ -45,26 +63,68 @@ $ fpx --version
 $ fpx --help
 ```
 
-## Running Tests with coverage 🧪
+## Repository Management 📦
 
-To run all unit tests use the following command:
+FPX supports managing remote brick repositories to access a wider variety of Mason bricks beyond your local configuration.
 
-```sh
-$ dart pub global activate coverage 1.2.0
-$ dart test --coverage=coverage
-$ dart pub global run coverage:format_coverage --lcov --in=coverage --out=coverage/lcov.info
-```
+### Adding Repositories
 
-To view the generated coverage report you can use [lcov](https://github.com/linux-test-project/lcov)
-.
+Add a repository using its Git URL:
 
 ```sh
-# Generate Coverage Report
-$ genhtml coverage/lcov.info -o coverage/
+# Add with auto-generated name
+$ fpx repository add --url https://github.com/unping/unping-ui
 
-# Open Coverage Report
-$ open coverage/index.html
+# Add with custom name
+$ fpx repository add --url https://github.com/unping/unping-ui --name unping-ui
 ```
+
+The CLI automatically detects GitHub repository structures and extracts the appropriate path to bricks. For GitHub URLs, it will:
+- Parse tree/branch paths (e.g., `https://github.com/owner/repo/tree/main/bricks`)
+- Extract the correct Git URL and bricks path
+- Default to `bricks/` folder if no specific path is detected
+
+### Listing Repositories
+
+View all configured repositories:
+
+```sh
+$ fpx repository list
+```
+
+This shows each repository's name, Git URL, and the path to bricks within the repository.
+
+### Removing Repositories
+
+Remove a repository by its name/alias:
+
+```sh
+$ fpx repository remove --name mason-bricks
+```
+
+### Configuration
+
+Repository configurations are stored in `fpx_repositories.yaml` in your current directory. This file is automatically created and managed by the CLI. Example structure:
+
+```yaml
+# fpx repository configuration
+# This file manages remote repositories for unping-UI
+repositories:
+  unping-ui:
+    url: https://github.com/unping/unping-ui.git
+    path: bricks
+  my-widgets:
+    url: https://github.com/username/flutter-widgets.git
+    path: mason_bricks
+```
+
+## Contributing 🤝
+
+We welcome contributions! For development setup, testing, and contribution guidelines, see [README_local_development.md](README_local_development.md).
+
+## License 📄
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ---
 
