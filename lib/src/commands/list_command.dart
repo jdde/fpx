@@ -52,7 +52,8 @@ class ListCommand extends Command<int> {
       }
       _logger.info('');
       _logger.info('💡 Use "fpx add <brick-name>" to search all repositories');
-      _logger.info('   Or "fpx add @repo/<brick-name>" for a specific repository');
+      _logger
+          .info('   Or "fpx add @repo/<brick-name>" for a specific repository');
     }
 
     // Show help if nothing is configured
@@ -61,7 +62,8 @@ class ListCommand extends Command<int> {
       _logger.info('📋 No bricks or repositories configured yet');
       _logger.info('💡 Add bricks to mason.yaml or configure repositories:');
       _logger.info('   fpx repository add --name <name> --url <url>');
-      _logger.info('   fpx init  # to create mason.yaml and default repositories');
+      _logger
+          .info('   fpx init  # to create mason.yaml and default repositories');
     }
 
     return ExitCode.success.code;
@@ -90,7 +92,8 @@ class ListCommand extends Command<int> {
     final masonYamlFile = File('mason.yaml');
 
     if (!await masonYamlFile.exists()) {
-      _logger.info('📦 No mason.yaml found, creating one with default settings...');
+      _logger.info(
+          '📦 No mason.yaml found, creating one with default settings...');
 
       const defaultMasonYaml = '''
 bricks:

@@ -17,14 +17,14 @@ void main() {
     setUp(() async {
       logger = _MockLogger();
       command = InitCommand(logger: logger);
-      
+
       // Save original directory
       originalDir = Directory.current;
-      
+
       // Create a temporary test directory
       testDir = await Directory.systemTemp.createTemp('fpx_init_test_');
       Directory.current = testDir;
-      
+
       // Ensure clean state
       final masonYamlFile = File('mason.yaml');
       if (await masonYamlFile.exists()) {
@@ -35,7 +35,7 @@ void main() {
     tearDown(() async {
       // Restore original directory first
       Directory.current = originalDir;
-      
+
       // Clean up temporary directory
       if (await testDir.exists()) {
         await testDir.delete(recursive: true);
@@ -63,9 +63,15 @@ void main() {
       expect(content, contains('# Add your bricks here'));
 
       // Verify logger calls
-      verify(() => logger.info('📦 Creating mason.yaml with default settings...')).called(1);
-      verify(() => logger.success('✅ Created mason.yaml with default configuration')).called(1);
-      verify(() => logger.info('📝 Add your bricks to mason.yaml and run "fpx add <brick-name>"')).called(1);
+      verify(() =>
+              logger.info('📦 Creating mason.yaml with default settings...'))
+          .called(1);
+      verify(() =>
+              logger.success('✅ Created mason.yaml with default configuration'))
+          .called(1);
+      verify(() => logger.info(
+              '📝 Add your bricks to mason.yaml and run "fpx add <brick-name>"'))
+          .called(1);
     });
 
     test('warns when mason.yaml already exists', () async {
@@ -85,8 +91,10 @@ void main() {
 
       // Verify logger calls
       verify(() => logger.warn('⚠️  mason.yaml already exists')).called(1);
-      verifyNever(() => logger.info('📦 Creating mason.yaml with default settings...'));
-      verifyNever(() => logger.success('✅ Created mason.yaml with default configuration'));
+      verifyNever(
+          () => logger.info('📦 Creating mason.yaml with default settings...'));
+      verifyNever(() =>
+          logger.success('✅ Created mason.yaml with default configuration'));
     });
 
     test('has correct name and description', () {

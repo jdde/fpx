@@ -83,18 +83,18 @@ class RepositoryAddCommand extends Command<int> {
   Future<int> run() async {
     final repositoryUrl = argResults!['url'] as String;
     final providedName = argResults!['name'] as String?;
-    
+
     // Parse repository name from URL if not provided
     final repositoryName = providedName ?? _parseRepositoryName(repositoryUrl);
 
     try {
       final parsedRepo = _parseRepositoryUrl(repositoryUrl);
       await _addRepository(repositoryName, parsedRepo.url, parsedRepo.path);
-      
+
       _logger.success('✅ Successfully added repository "$repositoryName"');
       _logger.info('   URL: ${parsedRepo.url}');
       _logger.info('   Path: ${parsedRepo.path}');
-      
+
       return ExitCode.success.code;
     } catch (e) {
       _logger.err('❌ Failed to add repository: $e');
@@ -107,12 +107,12 @@ class RepositoryAddCommand extends Command<int> {
     try {
       final uri = Uri.parse(url);
       final pathSegments = uri.pathSegments;
-      
+
       if (pathSegments.isNotEmpty) {
         // Get the first path segment (repository owner/organization)
         return pathSegments[0];
       }
-      
+
       // Fallback: use the host without www prefix
       return uri.host.replaceFirst('www.', '');
     } catch (e) {
@@ -124,65 +124,65 @@ class RepositoryAddCommand extends Command<int> {
   /// Parses a repository URL and extracts the base URL and path to bricks
   RepositoryInfo _parseRepositoryUrl(String url) {
     final uri = Uri.parse(url);
-    
+
     // Handle GitHub URLs with tree/branch/path structure
     if (uri.host == 'github.com') {
       final pathSegments = uri.pathSegments;
-      
+
       if (pathSegments.length >= 2) {
         final owner = pathSegments[0];
         final repo = pathSegments[1];
-        
+
         // Base repository URL
         final baseUrl = 'https://github.com/$owner/$repo.git';
-        
+
         // Check for tree/branch/path structure
         if (pathSegments.length >= 4 && pathSegments[2] == 'tree') {
           // URL like: https://github.com/felangel/mason/tree/master/bricks
           final branchAndPath = pathSegments.skip(3).join('/');
           final pathParts = branchAndPath.split('/');
-          
+
           if (pathParts.length > 1) {
             // Skip branch name and get the path
             final bricksPath = pathParts.skip(1).join('/');
             return RepositoryInfo(url: baseUrl, path: bricksPath);
           }
         }
-        
+
         // Check for blob/branch/path structure (single file)
         if (pathSegments.length >= 4 && pathSegments[2] == 'blob') {
           // URL like: https://github.com/felangel/mason/blob/master/bricks/greeting/brick.yaml
           final branchAndPath = pathSegments.skip(3).join('/');
           final pathParts = branchAndPath.split('/');
-          
+
           if (pathParts.length > 1) {
             // Skip branch name and get directory path
-            final bricksPath = pathParts.take(pathParts.length - 1).skip(1).join('/');
+            final bricksPath =
+                pathParts.take(pathParts.length - 1).skip(1).join('/');
             return RepositoryInfo(url: baseUrl, path: bricksPath);
           }
         }
-        
 
         // Default fallback
         return RepositoryInfo(url: baseUrl, path: 'bricks');
       }
     }
-    
+
     // For non-GitHub URLs or malformed GitHub URLs, use as-is with default path
     return RepositoryInfo(url: url, path: 'bricks');
   }
 
   Future<void> _addRepository(String name, String url, String path) async {
     final config = await _loadRepositoryConfig();
-    
+
     config['repositories'] ??= <String, dynamic>{};
     final repositories = config['repositories'] as Map<String, dynamic>;
-    
+
     repositories[name] = {
       'url': url,
       'path': path,
     };
-    
+
     await _saveRepositoryConfig(config);
   }
 
@@ -206,7 +206,7 @@ class RepositoryAddCommand extends Command<int> {
 
   Future<void> _saveRepositoryConfig(Map<String, dynamic> config) async {
     final configFile = File(RepositoryService.configFileName);
-    
+
     const header = '''# fpx repository configuration
 # This file manages remote repositories for Mason bricks
 # 
@@ -217,7 +217,7 @@ class RepositoryAddCommand extends Command<int> {
 #     path: <path_to_bricks_in_repo>
 
 ''';
-    
+
     final yamlContent = _mapToYaml(config);
     await configFile.writeAsString(header + yamlContent);
   }
@@ -225,16 +225,17 @@ class RepositoryAddCommand extends Command<int> {
   String _mapToYaml(Map<String, dynamic> map, [int indent = 0]) {
     final buffer = StringBuffer();
     final spaces = '  ' * indent;
-    
+
     for (final entry in map.entries) {
       if (entry.value is Map) {
         buffer.writeln('${spaces}${entry.key}:');
-        buffer.write(_mapToYaml(entry.value as Map<String, dynamic>, indent + 1));
+        buffer
+            .write(_mapToYaml(entry.value as Map<String, dynamic>, indent + 1));
       } else {
         buffer.writeln('${spaces}${entry.key}: ${entry.value}');
       }
     }
-    
+
     return buffer.toString();
   }
 }
@@ -290,11 +291,11 @@ class RepositoryRemoveCommand extends Command<int> {
   Future<bool> _removeRepository(String name) async {
     final config = await _loadRepositoryConfig();
     final repositories = config['repositories'] as Map<String, dynamic>?;
-    
+
     if (repositories == null || !repositories.containsKey(name)) {
       return false;
     }
-    
+
     repositories.remove(name);
     await _saveRepositoryConfig(config);
     return true;
@@ -320,7 +321,7 @@ class RepositoryRemoveCommand extends Command<int> {
 
   Future<void> _saveRepositoryConfig(Map<String, dynamic> config) async {
     final configFile = File(RepositoryService.configFileName);
-    
+
     const header = '''# fpx repository configuration
 # This file manages remote repositories for Mason bricks
 # 
@@ -331,7 +332,7 @@ class RepositoryRemoveCommand extends Command<int> {
 #     path: <path_to_bricks_in_repo>
 
 ''';
-    
+
     final yamlContent = _mapToYaml(config);
     await configFile.writeAsString(header + yamlContent);
   }
@@ -339,16 +340,17 @@ class RepositoryRemoveCommand extends Command<int> {
   String _mapToYaml(Map<String, dynamic> map, [int indent = 0]) {
     final buffer = StringBuffer();
     final spaces = '  ' * indent;
-    
+
     for (final entry in map.entries) {
       if (entry.value is Map) {
         buffer.writeln('${spaces}${entry.key}:');
-        buffer.write(_mapToYaml(entry.value as Map<String, dynamic>, indent + 1));
+        buffer
+            .write(_mapToYaml(entry.value as Map<String, dynamic>, indent + 1));
       } else {
         buffer.writeln('${spaces}${entry.key}: ${entry.value}');
       }
     }
-    
+
     return buffer.toString();
   }
 }
@@ -381,11 +383,14 @@ class RepositoryListCommand extends Command<int> {
 
       if (repositories == null || repositories.isEmpty) {
         _logger.info('📋 No repositories configured yet');
-        _logger.info('💡 Add a repository with: fpx repository add --url <url> [--name <name>]');
+        _logger.info(
+            '💡 Add a repository with: fpx repository add --url <url> [--name <name>]');
         _logger.info('');
         _logger.info('Example repositories:');
-        _logger.info('  fpx repository add --url https://github.com/Unping/unping-ui');
-        _logger.info('  fpx repository add --name my-bricks --url https://github.com/Unping/unping-ui');
+        _logger.info(
+            '  fpx repository add --url https://github.com/Unping/unping-ui');
+        _logger.info(
+            '  fpx repository add --name my-bricks --url https://github.com/Unping/unping-ui');
         return ExitCode.success.code;
       }
 
@@ -395,7 +400,7 @@ class RepositoryListCommand extends Command<int> {
         final repoConfig = entry.value as Map<String, dynamic>;
         final url = repoConfig['url'] as String;
         final path = repoConfig['path'] as String;
-        
+
         _logger.info('  $repoName:');
         _logger.info('    URL: $url');
         _logger.info('    Path: $path');

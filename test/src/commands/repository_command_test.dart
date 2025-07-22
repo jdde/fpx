@@ -40,7 +40,8 @@ void main() {
     group('repository add', () {
       test('adds a new repository successfully', () async {
         final result = await commandRunner.run([
-          'repository', 'add',
+          'repository',
+          'add',
           '--name=test-repo',
           '--url=https://github.com/test/repo.git',
         ]);
@@ -59,7 +60,8 @@ void main() {
 
       test('uses default path when not specified', () async {
         final result = await commandRunner.run([
-          'repository', 'add',
+          'repository',
+          'add',
           '--name=test-repo',
           '--url=https://github.com/test/repo.git',
         ]);
@@ -74,7 +76,8 @@ void main() {
       test('fails when name is missing', () async {
         expect(
           () => commandRunner.run([
-            'repository', 'add',
+            'repository',
+            'add',
             '--url=https://github.com/test/repo.git',
           ]),
           throwsA(isA<UsageException>()),
@@ -84,7 +87,8 @@ void main() {
       test('fails when url is missing', () async {
         expect(
           () => commandRunner.run([
-            'repository', 'add',
+            'repository',
+            'add',
             '--name=test-repo',
           ]),
           throwsA(isA<UsageException>()),
@@ -96,7 +100,8 @@ void main() {
       test('shows configured repositories', () async {
         // Add a repository first
         await commandRunner.run([
-          'repository', 'add',
+          'repository',
+          'add',
           '--name=test-repo',
           '--url=https://github.com/test/repo.git',
         ]);
@@ -115,14 +120,16 @@ void main() {
       test('removes an existing repository', () async {
         // Add a repository first
         await commandRunner.run([
-          'repository', 'add',
+          'repository',
+          'add',
           '--name=test-repo',
           '--url=https://github.com/test/repo.git',
         ]);
 
         // Remove it
         final result = await commandRunner.run([
-          'repository', 'remove',
+          'repository',
+          'remove',
           '--name=test-repo',
         ]);
 
@@ -138,7 +145,8 @@ void main() {
 
       test('handles non-existent repository gracefully', () async {
         final result = await commandRunner.run([
-          'repository', 'remove',
+          'repository',
+          'remove',
           '--name=non-existent',
         ]);
 
@@ -147,7 +155,8 @@ void main() {
 
       test('works with alias "rm"', () async {
         final result = await commandRunner.run([
-          'repository', 'rm',
+          'repository',
+          'rm',
           '--name=non-existent',
         ]);
 

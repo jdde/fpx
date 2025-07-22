@@ -19,18 +19,18 @@ void main() {
     setUp(() async {
       logger = _MockLogger();
       command = AddCommand(logger: logger);
-      
+
       // Create a command runner to properly parse arguments
       commandRunner = CommandRunner<int>('test', 'Test runner')
         ..addCommand(command);
-      
+
       // Save original directory
       originalDir = Directory.current;
-      
+
       // Create a temporary test directory
       testDir = await Directory.systemTemp.createTemp('fpx_add_test_');
       Directory.current = testDir;
-      
+
       // Ensure clean state
       final masonYamlFile = File('mason.yaml');
       if (await masonYamlFile.exists()) {
@@ -41,7 +41,7 @@ void main() {
     tearDown(() async {
       // Restore original directory first
       Directory.current = originalDir;
-      
+
       // Clean up temporary directory
       if (await testDir.exists()) {
         await testDir.delete(recursive: true);
@@ -52,7 +52,8 @@ void main() {
       final result = await commandRunner.run(['add']);
 
       expect(result, equals(ExitCode.usage.code));
-      verify(() => logger.err('❌ Missing component name. Usage: fpx add <component>')).called(1);
+      verify(() => logger.err(
+          '❌ Missing component name. Usage: fpx add <component>')).called(1);
     });
 
     test('creates mason.yaml if it does not exist when running add', () async {
@@ -72,13 +73,17 @@ void main() {
 
       // Verify mason.yaml was created
       expect(await masonYamlFile.exists(), isTrue);
-      
+
       final content = await masonYamlFile.readAsString();
       expect(content, contains('bricks:'));
       expect(content, contains('# Add your bricks here'));
 
-      verify(() => logger.info('📦 No mason.yaml found, creating one with default settings...')).called(1);
-      verify(() => logger.success('✅ Created mason.yaml with default configuration')).called(1);
+      verify(() => logger.info(
+              '📦 No mason.yaml found, creating one with default settings...'))
+          .called(1);
+      verify(() =>
+              logger.success('✅ Created mason.yaml with default configuration'))
+          .called(1);
     });
 
     test('handles missing brick error correctly', () async {
@@ -98,7 +103,9 @@ bricks:
       }
 
       // Verify error is logged
-      verify(() => logger.err(any(that: contains('Failed to generate component')))).called(1);
+      verify(() =>
+              logger.err(any(that: contains('Failed to generate component'))))
+          .called(1);
     });
 
     test('loads mason.yaml correctly when it exists', () async {
@@ -114,7 +121,7 @@ bricks:
 ''');
 
       expect(await masonYamlFile.exists(), isTrue);
-      
+
       final content = await masonYamlFile.readAsString();
       expect(content, contains('button:'));
       expect(content, contains('widget:'));
@@ -132,7 +139,7 @@ bricks:
 ''');
 
       expect(await masonYamlFile.exists(), isTrue);
-      
+
       // The command should handle invalid YAML gracefully
       // This tests the error handling in _loadMasonYaml
     });
@@ -147,7 +154,8 @@ bricks:
 
       // Test with path option
       try {
-        await commandRunner.run(['add', 'test_component', '--path', './custom_path']);
+        await commandRunner
+            .run(['add', 'test_component', '--path', './custom_path']);
       } catch (e) {
         // Expected to fail due to missing brick files
       }
@@ -166,7 +174,8 @@ bricks:
 
       // Test with name option
       try {
-        await commandRunner.run(['add', 'test_component', '--name', 'custom_name']);
+        await commandRunner
+            .run(['add', 'test_component', '--name', 'custom_name']);
       } catch (e) {
         // Expected to fail due to missing brick files
       }
@@ -185,7 +194,8 @@ bricks:
 
       // Test with variant option
       try {
-        await commandRunner.run(['add', 'test_component', '--variant', 'primary']);
+        await commandRunner
+            .run(['add', 'test_component', '--variant', 'primary']);
       } catch (e) {
         // Expected to fail due to missing brick files
       }
@@ -197,7 +207,12 @@ bricks:
     test('handles command with source option', () async {
       // Test with source option (git URL)
       try {
-        await commandRunner.run(['add', 'test_component', '--source', 'https://github.com/example/repo.git']);
+        await commandRunner.run([
+          'add',
+          'test_component',
+          '--source',
+          'https://github.com/example/repo.git'
+        ]);
       } catch (e) {
         // Expected to fail due to network/brick issues
       }
@@ -213,7 +228,8 @@ bricks:
 
       // Test with source option (local path)
       try {
-        await commandRunner.run(['add', 'test_component', '--source', './local_brick']);
+        await commandRunner
+            .run(['add', 'test_component', '--source', './local_brick']);
       } catch (e) {
         // Expected to fail due to missing brick.yaml
       }
@@ -232,7 +248,7 @@ bricks:
 ''');
 
       expect(await masonYamlFile.exists(), isTrue);
-      
+
       final content = await masonYamlFile.readAsString();
       expect(content, contains('https://github.com/example/mason_bricks.git'));
     });
@@ -251,7 +267,8 @@ bricks:
 
       // Test with custom path that doesn't exist
       try {
-        await commandRunner.run(['add', 'test_component', '--path', './non_existent_target']);
+        await commandRunner
+            .run(['add', 'test_component', '--path', './non_existent_target']);
       } catch (e) {
         // Expected to fail due to missing brick files
       }
@@ -268,7 +285,7 @@ bricks:
       expect(command.argParser.options.containsKey('variant'), isTrue);
       expect(command.argParser.options.containsKey('path'), isTrue);
       expect(command.argParser.options.containsKey('source'), isTrue);
-      
+
       // Test default value for path option
       expect(command.argParser.options['path']!.defaultsTo, equals('.'));
     });

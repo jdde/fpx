@@ -42,9 +42,12 @@ class FpxCommandRunner extends CompletionCommandRunner<int> {
       );
 
     // Add sub commands
-    addCommand(AddCommand(logger: _logger, repositoryService: _repositoryService));
-    addCommand(InitCommand(logger: _logger, repositoryService: _repositoryService));
-    addCommand(ListCommand(logger: _logger, repositoryService: _repositoryService));
+    addCommand(
+        AddCommand(logger: _logger, repositoryService: _repositoryService));
+    addCommand(
+        InitCommand(logger: _logger, repositoryService: _repositoryService));
+    addCommand(
+        ListCommand(logger: _logger, repositoryService: _repositoryService));
     addCommand(RepositoryCommand(logger: _logger));
     addCommand(UpdateCommand(logger: _logger, pubUpdater: _pubUpdater));
   }

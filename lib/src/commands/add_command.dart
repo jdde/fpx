@@ -73,7 +73,8 @@ class AddCommand extends Command<int> {
       }
 
       // Find or create brick
-      final brick = await _findBrick(component, argResults!['source'] as String?);
+      final brick =
+          await _findBrick(component, argResults!['source'] as String?);
 
       // Create generator from brick
       final generator = await MasonGenerator.fromBrick(brick);
@@ -81,7 +82,8 @@ class AddCommand extends Command<int> {
       // Create variables map from parsed arguments
       final vars = <String, dynamic>{};
       if (argResults!['name'] != null) vars['name'] = argResults!['name'];
-      if (argResults!['variant'] != null) vars['variant'] = argResults!['variant'];
+      if (argResults!['variant'] != null)
+        vars['variant'] = argResults!['variant'];
 
       // Add component name as default variable
       vars['component'] = component;
@@ -91,7 +93,8 @@ class AddCommand extends Command<int> {
 
       // Generate the component
       final target = DirectoryGeneratorTarget(targetDirectory);
-      final files = await generator.generate(target, vars: vars, logger: _logger);
+      final files =
+          await generator.generate(target, vars: vars, logger: _logger);
 
       _logger.success('✅ Successfully generated $component component!');
       _logger.info('Generated ${files.length} file(s):');
@@ -122,11 +125,12 @@ class AddCommand extends Command<int> {
 
     // Search in configured repositories first
     final searchResults = await _repositoryService.findBrick(component);
-    
+
     if (searchResults.length == 1) {
       // Single match found
       final result = searchResults.first;
-      _logger.info('Using brick "${result.brickName}" from repository "${result.repositoryName}"');
+      _logger.info(
+          'Using brick "${result.brickName}" from repository "${result.repositoryName}"');
       return result.brick;
     } else if (searchResults.length > 1) {
       // Multiple matches found, let user choose
@@ -136,7 +140,7 @@ class AddCommand extends Command<int> {
         _logger.info('  ${i + 1}. ${result.repositoryName}/${result.fullPath}');
       }
       _logger.info('  0. Cancel');
-      
+
       // Prompt user to select which brick to use
       final selected = await _promptUserSelection(searchResults);
       _logger.info('Using: ${selected.repositoryName}/${selected.fullPath}');
@@ -210,7 +214,8 @@ class AddCommand extends Command<int> {
     final masonYamlFile = File('mason.yaml');
 
     if (!await masonYamlFile.exists()) {
-      _logger.info('📦 No mason.yaml found, creating one with default settings...');
+      _logger.info(
+          '📦 No mason.yaml found, creating one with default settings...');
 
       const defaultMasonYaml = '''
 bricks:
@@ -242,7 +247,8 @@ bricks:
 
       for (final varName in commonVars) {
         if (!vars.containsKey(varName)) {
-          _logger.detail('Variable $varName not provided, using defaults if available');
+          _logger.detail(
+              'Variable $varName not provided, using defaults if available');
         }
       }
     } catch (e) {
@@ -251,32 +257,35 @@ bricks:
     }
   }
 
-  Future<BrickSearchResult> _promptUserSelection(List<BrickSearchResult> searchResults) async {
+  Future<BrickSearchResult> _promptUserSelection(
+      List<BrickSearchResult> searchResults) async {
     while (true) {
-      stdout.write('\nPlease select a brick (1-${searchResults.length}, or 0 to cancel): ');
+      stdout.write(
+          '\nPlease select a brick (1-${searchResults.length}, or 0 to cancel): ');
       final input = stdin.readLineSync();
-      
+
       if (input == null || input.trim().isEmpty) {
         _logger.err('Please enter a valid selection.');
         continue;
       }
-      
+
       final selection = int.tryParse(input.trim());
       if (selection == null) {
         _logger.err('Invalid input. Please enter a number.');
         continue;
       }
-      
+
       if (selection == 0) {
         _logger.info('Operation cancelled.');
         throw Exception('User cancelled brick selection');
       }
-      
+
       if (selection < 1 || selection > searchResults.length) {
-        _logger.err('Invalid selection. Please enter a number between 1 and ${searchResults.length}, or 0 to cancel.');
+        _logger.err(
+            'Invalid selection. Please enter a number between 1 and ${searchResults.length}, or 0 to cancel.');
         continue;
       }
-      
+
       return searchResults[selection - 1];
     }
   }
