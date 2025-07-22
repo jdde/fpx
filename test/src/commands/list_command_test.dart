@@ -1,22 +1,31 @@
 import 'dart:io';
 
 import 'package:fpx/src/commands/list_command.dart';
+import 'package:fpx/src/services/repository_service.dart';
 import 'package:mason_logger/mason_logger.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:test/test.dart';
 
 class _MockLogger extends Mock implements Logger {}
 
+class _MockRepositoryService extends Mock implements RepositoryService {}
+
 void main() {
   group('ListCommand', () {
     late Logger logger;
+    late RepositoryService repositoryService;
     late ListCommand command;
     late Directory testDir;
     late Directory originalDir;
 
     setUp(() async {
       logger = _MockLogger();
-      command = ListCommand(logger: logger);
+      repositoryService = _MockRepositoryService();
+      command = ListCommand(logger: logger, repositoryService: repositoryService);
+
+      // Mock empty repositories by default
+      when(() => repositoryService.getRepositories())
+          .thenAnswer((_) async => <String, RepositoryInfo>{});
 
       // Save original directory
       originalDir = Directory.current;
@@ -70,10 +79,13 @@ void main() {
       verify(() =>
               logger.success('✅ Created mason.yaml with default configuration'))
           .called(1);
-      verify(() => logger.info('📋 No bricks configured in mason.yaml yet'))
+      verify(() => logger.info('📋 No bricks or repositories configured yet'))
           .called(1);
-      verify(() => logger.info(
-              '💡 Add bricks to mason.yaml or use --source option with fpx add'))
+      verify(() => logger.info('💡 Add bricks to mason.yaml or configure repositories:'))
+          .called(1);
+      verify(() => logger.info('   fpx repository add --name <name> --url <url>'))
+          .called(1);
+      verify(() => logger.info('   fpx init  # to create mason.yaml and default repositories'))
           .called(1);
     });
 
@@ -90,10 +102,13 @@ bricks:
       expect(result, equals(ExitCode.success.code));
 
       // Verify logger calls
-      verify(() => logger.info('📋 No bricks configured in mason.yaml yet'))
+      verify(() => logger.info('📋 No bricks or repositories configured yet'))
           .called(1);
-      verify(() => logger.info(
-              '💡 Add bricks to mason.yaml or use --source option with fpx add'))
+      verify(() => logger.info('💡 Add bricks to mason.yaml or configure repositories:'))
+          .called(1);
+      verify(() => logger.info('   fpx repository add --name <name> --url <url>'))
+          .called(1);
+      verify(() => logger.info('   fpx init  # to create mason.yaml and default repositories'))
           .called(1);
       verifyNever(() => logger.info(
           '📦 No mason.yaml found, creating one with default settings...'));
@@ -112,10 +127,13 @@ some_other_config: value
       expect(result, equals(ExitCode.success.code));
 
       // Verify logger calls
-      verify(() => logger.info('📋 No bricks configured in mason.yaml yet'))
+      verify(() => logger.info('📋 No bricks or repositories configured yet'))
           .called(1);
-      verify(() => logger.info(
-              '💡 Add bricks to mason.yaml or use --source option with fpx add'))
+      verify(() => logger.info('💡 Add bricks to mason.yaml or configure repositories:'))
+          .called(1);
+      verify(() => logger.info('   fpx repository add --name <name> --url <url>'))
+          .called(1);
+      verify(() => logger.info('   fpx init  # to create mason.yaml and default repositories'))
           .called(1);
     });
 
@@ -141,12 +159,13 @@ bricks:
       expect(result, equals(ExitCode.success.code));
 
       // Verify logger calls
-      verify(() => logger.info('Available bricks:')).called(1);
+      verify(() => logger.info('Local bricks (mason.yaml):')).called(1);
       verify(() => logger.info('  button')).called(1);
       verify(() => logger.info('  widget')).called(1);
       verify(() => logger.info('  form')).called(1);
+      verify(() => logger.info('')).called(1);
       verifyNever(
-          () => logger.info('📋 No bricks configured in mason.yaml yet'));
+          () => logger.info('📋 No bricks or repositories configured yet'));
     });
 
     test('handles invalid yaml gracefully', () async {
@@ -163,10 +182,13 @@ bricks: [
       expect(result, equals(ExitCode.success.code));
 
       // Should show no bricks message when YAML is invalid
-      verify(() => logger.info('📋 No bricks configured in mason.yaml yet'))
+      verify(() => logger.info('📋 No bricks or repositories configured yet'))
           .called(1);
-      verify(() => logger.info(
-              '💡 Add bricks to mason.yaml or use --source option with fpx add'))
+      verify(() => logger.info('💡 Add bricks to mason.yaml or configure repositories:'))
+          .called(1);
+      verify(() => logger.info('   fpx repository add --name <name> --url <url>'))
+          .called(1);
+      verify(() => logger.info('   fpx init  # to create mason.yaml and default repositories'))
           .called(1);
     });
 
@@ -184,10 +206,13 @@ bricks: [
       expect(result, equals(ExitCode.success.code));
 
       // Should show no bricks message when YAML is not a map
-      verify(() => logger.info('📋 No bricks configured in mason.yaml yet'))
+      verify(() => logger.info('📋 No bricks or repositories configured yet'))
           .called(1);
-      verify(() => logger.info(
-              '💡 Add bricks to mason.yaml or use --source option with fpx add'))
+      verify(() => logger.info('💡 Add bricks to mason.yaml or configure repositories:'))
+          .called(1);
+      verify(() => logger.info('   fpx repository add --name <name> --url <url>'))
+          .called(1);
+      verify(() => logger.info('   fpx init  # to create mason.yaml and default repositories'))
           .called(1);
     });
 
@@ -202,10 +227,13 @@ bricks: [
       expect(result, equals(ExitCode.success.code));
 
       // Should show no bricks message when file is empty
-      verify(() => logger.info('📋 No bricks configured in mason.yaml yet'))
+      verify(() => logger.info('📋 No bricks or repositories configured yet'))
           .called(1);
-      verify(() => logger.info(
-              '💡 Add bricks to mason.yaml or use --source option with fpx add'))
+      verify(() => logger.info('💡 Add bricks to mason.yaml or configure repositories:'))
+          .called(1);
+      verify(() => logger.info('   fpx repository add --name <name> --url <url>'))
+          .called(1);
+      verify(() => logger.info('   fpx init  # to create mason.yaml and default repositories'))
           .called(1);
     });
 
