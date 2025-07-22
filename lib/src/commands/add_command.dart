@@ -1,0 +1,212 @@
+import 'dart:io';
+
+import 'package:args/command_runner.dart';
+import 'package:mason/mason.dart';
+import 'package:path/path.dart' as path;
+import 'package:yaml/yaml.dart';
+
+/// {@template add_command}
+/// A [Command] to add a component using Mason bricks.
+/// {@endtemplate}
+class AddCommand extends Command<int> {
+  /// {@macro add_command}
+  AddCommand({
+    required Logger logger,
+  }) : _logger = logger {
+    argParser
+      ..addOption(
+        'name',
+        help: 'Component name',
+      )
+      ..addOption(
+        'variant',
+        help: 'Component variant',
+      )
+      ..addOption(
+        'path',
+        help: 'Target path',
+        defaultsTo: '.',
+      )
+      ..addOption(
+        'source',
+        help: 'Brick source URL',
+      );
+  }
+
+  @override
+  String get description => 'Add a component using Mason bricks';
+
+  @override
+  String get name => 'add';
+
+  @override
+  String get invocation => 'fpx add <component> [options]';
+
+  final Logger _logger;
+
+  @override
+  Future<int> run() async {
+    if (argResults!.rest.isEmpty) {
+      _logger.err('❌ Missing component name. Usage: fpx add <component>');
+      return ExitCode.usage.code;
+    }
+
+    // Auto-initialize if mason.yaml doesn't exist
+    await _ensureMasonYamlExists();
+
+    final component = argResults!.rest.first;
+
+    try {
+      // Get target directory
+      final targetPath = argResults!['path'] as String;
+      final targetDirectory = Directory(path.isAbsolute(targetPath)
+          ? targetPath
+          : path.join(Directory.current.path, targetPath));
+
+      if (!await targetDirectory.exists()) {
+        await targetDirectory.create(recursive: true);
+      }
+
+      // Find or create brick
+      final brick = await _findBrick(component, argResults!['source'] as String?);
+
+      // Create generator from brick
+      final generator = await MasonGenerator.fromBrick(brick);
+
+      // Create variables map from parsed arguments
+      final vars = <String, dynamic>{};
+      if (argResults!['name'] != null) vars['name'] = argResults!['name'];
+      if (argResults!['variant'] != null) vars['variant'] = argResults!['variant'];
+
+      // Add component name as default variable
+      vars['component'] = component;
+
+      // Prompt for any missing required variables
+      await _promptForMissingVars(generator, vars);
+
+      // Generate the component
+      final target = DirectoryGeneratorTarget(targetDirectory);
+      final files = await generator.generate(target, vars: vars, logger: _logger);
+
+      _logger.success('✅ Successfully generated $component component!');
+      _logger.info('Generated ${files.length} file(s):');
+      for (final file in files) {
+        _logger.detail('  ${file.path}');
+      }
+
+      return ExitCode.success.code;
+    } catch (e, stackTrace) {
+      _logger.err('❌ Failed to generate component: $e');
+      _logger.detail('Stack trace: $stackTrace');
+      return ExitCode.software.code;
+    }
+  }
+
+  Future<Brick> _findBrick(String component, String? source) async {
+    // If source is provided, try to use it as a Git URL or path
+    if (source != null) {
+      if (source.startsWith('http') || source.contains('github.com')) {
+        // Handle remote Git repository
+        _logger.info('Fetching brick from remote source: $source');
+        return Brick.git(GitPath(source));
+      } else if (await Directory(source).exists()) {
+        // Handle local path
+        return Brick.path(source);
+      }
+    }
+
+    // Try to find brick in mason.yaml
+    final masonYaml = await _loadMasonYaml();
+    if (masonYaml != null) {
+      final bricksNode = masonYaml['bricks'];
+      if (bricksNode is Map && bricksNode.containsKey(component)) {
+        final brickConfig = bricksNode[component];
+
+        // Handle different brick source types
+        if (brickConfig is Map && brickConfig.containsKey('git')) {
+          final gitConfig = brickConfig['git'];
+          if (gitConfig is Map) {
+            final url = gitConfig['url'] as String;
+            final gitPath = gitConfig.containsKey('path')
+                ? GitPath(url, path: gitConfig['path'] as String)
+                : GitPath(url);
+            return Brick.git(gitPath);
+          }
+        } else if (brickConfig is Map && brickConfig.containsKey('path')) {
+          final brickPath = brickConfig['path'] as String;
+          return Brick.path(brickPath);
+        }
+      }
+    }
+
+    // If no brick found, suggest creating mason.yaml
+    throw Exception(
+      'Brick "$component" not found. Please add it to mason.yaml or use --source option.\n'
+      'Run "fpx init" to create a mason.yaml file.',
+    );
+  }
+
+  Future<Map<String, dynamic>?> _loadMasonYaml() async {
+    final masonYamlFile = File('mason.yaml');
+    if (!await masonYamlFile.exists()) {
+      return null;
+    }
+
+    try {
+      final content = await masonYamlFile.readAsString();
+      final yamlMap = loadYaml(content);
+
+      if (yamlMap is Map) {
+        return Map<String, dynamic>.from(yamlMap);
+      }
+      return null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  Future<void> _ensureMasonYamlExists() async {
+    final masonYamlFile = File('mason.yaml');
+
+    if (!await masonYamlFile.exists()) {
+      _logger.info('📦 No mason.yaml found, creating one with default settings...');
+
+      const defaultMasonYaml = '''
+bricks:
+  # Add your bricks here
+  # Example:
+  # button:
+  #   git:
+  #     url: https://github.com/felangel/mason.git
+  #     path: bricks/button
+  # 
+  # widget:
+  #   path: ./bricks/widget
+''';
+
+      await masonYamlFile.writeAsString(defaultMasonYaml);
+      _logger.success('✅ Created mason.yaml with default configuration');
+    }
+  }
+
+  Future<void> _promptForMissingVars(
+    MasonGenerator generator,
+    Map<String, dynamic> vars,
+  ) async {
+    // Get brick variables from the generator
+    try {
+      // For Mason generators, we can't easily access brick variables at runtime
+      // So we'll just warn about common missing variables
+      final commonVars = ['name', 'description', 'component'];
+
+      for (final varName in commonVars) {
+        if (!vars.containsKey(varName)) {
+          _logger.detail('Variable $varName not provided, using defaults if available');
+        }
+      }
+    } catch (e) {
+      // If we can't read brick variables, continue with provided vars
+      _logger.detail('Could not read brick variables: $e');
+    }
+  }
+}

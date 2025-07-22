@@ -1,25 +1,24 @@
-name: Test and Coverage
+name: fpx
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 on:
   pull_request:
-    branches:
-      - main
     paths:
-      - bin/**
-      - test/**
-      - pubspec.yaml
-      - pubspec.lock
-      - .github/workflows/test.yaml
-
+      - ".github/workflows/fpx.yaml"
+      - "lib/**"
+      - "test/**"
+      - "pubspec.yaml"
   push:
     branches:
       - main
     paths:
-      - bin/**
-      - test/**
-      - pubspec.yaml
-      - pubspec.lock
-      - .github/workflows/test.yaml
+      - ".github/workflows/fpx.yaml"
+      - "lib/**"
+      - "test/**"
+      - "pubspec.yaml"
 
 jobs:
   test:
@@ -33,12 +32,12 @@ jobs:
 
     steps:
       - name: 📚 Git Checkout
-        uses: actions/checkout@v4.2.2
+        uses: actions/checkout@v4
 
       - name: 🎯 Setup Dart
         uses: dart-lang/setup-dart@v1
         with:
-          sdk: stable
+          sdk: "stable"
 
       - name: 📦 Install Dependencies
         run: dart pub get
@@ -53,25 +52,33 @@ jobs:
 
     steps:
       - name: 📚 Git Checkout
-        uses: actions/checkout@v4.2.2
+        uses: actions/checkout@v4
 
       - name: 🎯 Setup Dart
         uses: dart-lang/setup-dart@v1
         with:
-          sdk: stable
+          sdk: "stable"
 
       - name: 📦 Install Dependencies
         run: dart pub get
 
       - name: 🧪 Run Tests with Coverage
-        run: |
-          dart pub global activate coverage 1.2.0
-          dart test --concurrency=1 --coverage=coverage
-          dart pub global run coverage:format_coverage --lcov --in=coverage --out=assets/lcov.info --packages=.dart_tool/package_config.json --report-on=bin
+        run: dart test --coverage=coverage
+
+      - name: 📋 Format Coverage
+        run: dart pub global activate coverage && dart pub global run coverage:format_coverage --lcov --in=coverage --out=coverage/lcov.info --report-on=lib
 
       - name: 📊 Check Code Coverage
         uses: VeryGoodOpenSource/very_good_coverage@v3
         with:
-          path: assets/lcov.info
+          path: coverage/lcov.info
           min_coverage: 80
-          exclude: '**/*_test.dart **/*.g.dart **/*.freezed.dart'
+
+  spell-check:
+    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/spell_check.yml@v1
+    with:
+      includes: |
+        **/*.md
+        !brick/**/*.md
+        .*/**/*.md
+      modified_files_only: false
