@@ -36,6 +36,20 @@ cd fpx
 dart pub global activate --source=path .
 ```
 
+## Quick Start ⚡
+
+Get started in 2 simple steps:
+
+```sh
+# 1. Add the unping-ui repository (contains pre-built Flutter widgets)
+$ fpx repository add --url https://github.com/unping/unping-ui --name unping-ui
+
+# 2. Add a button widget to your project (mason.yaml will be created automatically)
+$ fpx add button --name my_awesome_button
+```
+
+That's it! FPX automatically creates the necessary configuration files and you now have a button widget ready to use in your Flutter project.
+
 ## Usage
 
 ```sh
