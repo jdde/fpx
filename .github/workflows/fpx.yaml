@@ -24,7 +24,8 @@ jobs:
   coverage:
     name: Coverage
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
+    permissions:
+      contents: write
 
     steps:
       - name: 📚 Git Checkout
@@ -45,10 +46,41 @@ jobs:
         run: dart pub global activate coverage && dart pub global run coverage:format_coverage --lcov --in=coverage --out=coverage/lcov.info --report-on=lib
 
       - name: 📊 Check Code Coverage
+        if: github.event_name == 'pull_request'
         uses: VeryGoodOpenSource/very_good_coverage@v3
         with:
           path: coverage/lcov.info
           min_coverage: 70
+
+      - name: 📈 Extract Coverage Percentage and Generate Badge
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          # Extract coverage percentage from lcov.info and create coverage.json
+          COVERAGE=$(lcov --summary coverage/lcov.info 2>&1 | grep -E 'lines\.*:' | grep -oE '[0-9]+\.[0-9]+' | head -1)
+          echo "Coverage: $COVERAGE%"
+          
+          # Create coverage.json in the format expected by the Python script
+          cat > coverage.json << EOF
+          {
+            "totals": {
+              "percent_covered_display": "$COVERAGE"
+            }
+          }
+          EOF
+          
+          # Generate coverage badge using Python script
+          python .github/scripts/generate_coverage_badge.py
+
+      - name: 📤 Commit Coverage Badge
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add coverage.svg
+          git commit -m 'Automatically updated coverage badge [skip ci]'
+          git push
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   spell-check:
     uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/spell_check.yml@v1
