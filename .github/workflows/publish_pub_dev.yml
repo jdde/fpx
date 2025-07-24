@@ -1,0 +1,33 @@
+name: Publish to pub.dev
+
+on:
+  pull_request:
+    types: [closed]
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  publish:
+    permissions:
+      id-token: write # Required for authentication using OIDC
+    
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: 🎯 Setup Dart
+      uses: dart-lang/setup-dart@v1
+      with:
+        sdk: "stable"
+
+    - name: 📦 Install Dependencies
+      run: dart pub get
+    
+    - name: Dry run publish
+      run: dart pub publish --dry-run
+
+    - name: Publish
+      run: dart pub publish --force
