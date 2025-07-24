@@ -1,6 +1,6 @@
 name: fpx
 description: Lightweight Widget focused Mason brick cli
-version: 0.0.1
+version: 0.0.2
 publish_to: none
 
 environment:
