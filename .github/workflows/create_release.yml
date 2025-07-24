@@ -40,7 +40,7 @@ jobs:
           if [[ ! -z "${{ inputs.version-manual }}" ]]; then
             VERSION="${{ inputs.version-manual }}"
           else
-            CURRENT_VERSION=$(yq e '.version' pubspec.yaml)
+            CURRENT_VERSION=$(grep '^version =' pubspec.yaml | sed 's/version = \(.*\)/\1/')
             IFS='.' read -r -a VERSION_PARTS <<< "$CURRENT_VERSION"
             case "${{ inputs.version-type }}" in
               major) VERSION_PARTS[0]=$((VERSION_PARTS[0] + 1)); VERSION_PARTS[1]=0; VERSION_PARTS[2]=0;;
@@ -51,7 +51,7 @@ jobs:
           fi
           git tag "$VERSION" -m "$VERSION"
           echo "version=$VERSION" >> $GITHUB_ENV
-      
+
       - name: Create release branch
         run: |
           BRANCH="release/${{ env.version }}"
@@ -60,7 +60,7 @@ jobs:
 
       - name: Update version in pubspec.yaml
         run: |
-          yq e ".version = \"${{ env.version }}\"" -i pubspec.yaml
+          sed -i "s/^version = \".*\"/version = ${{ env.version }}/" pubspec.yaml
           git add pubspec.yaml
           git commit -m "Bump version to ${{ env.version }}"
 
