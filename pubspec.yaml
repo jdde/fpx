@@ -3,7 +3,7 @@ description: Lightweight Widget focused Mason brick cli
 version: 0.1.1
 homepage: https://github.com/jdde
 repository: https://github.com/jdde/fpx
-publish_to: none
+#publish_to: none
 
 environment:
   sdk: ^3.5.0
