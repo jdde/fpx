@@ -54,3 +54,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI/CD publishing for pub.dev package
 \n## [0.1.2] - 2025-07-25
 
+
+\n## [0.1.3] - 2025-07-25
+
