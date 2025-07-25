@@ -9,24 +9,30 @@ jobs:
   tag-release:
     if: github.event.pull_request.merged == true && (startsWith(github.head_ref, 'release/') || startsWith(github.head_ref, 'hotfix/'))
     runs-on: ubuntu-latest
-    
+     
     steps:
       - uses: actions/checkout@v4
         with:
           ref: main
           fetch-depth: 0
 
-      - name: Configure git
-        run: |
-          git config user.name "GitHub actions release flow"
-          git config user.email noreply@github.com
-
       - name: Extract version from pubspec.yaml
         run: |
           VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: *\(.*\)/\1/')
           echo "version=$VERSION" >> $GITHUB_ENV
 
-      - name: Create and push tag
-        run: |
-          git tag "${{ env.version }}" -m "Release ${{ env.version }}"
-          git push origin "${{ env.version }}"
+      - name: Create GitHub Release
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { repo, owner } = context.repo;
+            const result = await github.rest.repos.createRelease({
+              owner,
+              repo,
+              tag_name: '${{ env.version }}',
+              name: 'Release ${{ env.version }}',
+              body: 'Auto-generated release for version ${{ env.version }}',
+              draft: false,
+              prerelease: false
+            });
+            console.log(`Created release: ${result.data.html_url}`);
