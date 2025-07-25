@@ -64,6 +64,15 @@ jobs:
           git add pubspec.yaml
           git commit -m "Bump version to ${{ env.version }}"
 
+      - name: Add empty Section in CHANGELOG.md
+        run: |
+          # Add new empty section at the bottom of CHANGELOG.md
+          echo "" >> CHANGELOG.md
+          echo "\n## [${{ env.version }}] - $(date '+%Y-%m-%d')" >> CHANGELOG.md
+          echo "" >> CHANGELOG.md
+          git add CHANGELOG.md
+          git commit -m "Add empty section for version ${{ env.version }} in CHANGELOG.md"
+      
       - name: Push new branch and tag
         run: |
           git push origin ${{ env.branch }}
