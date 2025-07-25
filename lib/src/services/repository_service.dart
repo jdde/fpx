@@ -192,7 +192,7 @@ class RepositoryService {
   }
 
   /// Save repository configuration to file.
-  Future<void> _saveRepositoryConfig(Map<String, dynamic> config) async {
+  Future<void> saveRepositoryConfig(Map<String, dynamic> config) async {
     final configFile = File(configFileName);
 
     const header = '''# fpx repository configuration

@@ -47,3 +47,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Error handling for missing bricks and invalid configurations
 - Integration with Mason CLI ecosystem
 - Lightweight Widget paste CLI with support for remote brick repositories
+
+## [0.1.1] - 2025-07-25
+
+### Added
+- CI/CD publishing for pub.dev package
