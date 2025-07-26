@@ -56,3 +56,15 @@ jobs:
               prerelease: false
             });
             console.log(`Created release: ${result.data.html_url}`);
+
+      - name: Trigger Publish Workflow
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'publish_pub_dev.yml',
+              ref: 'refs/tags/${{ env.version }}'  // Dispatch on the tag ref
+            });
+            console.log(`Triggered publish workflow for tag ${{ env.version }}`);
