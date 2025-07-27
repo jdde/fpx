@@ -1,6 +1,6 @@
 name: fpx
 description: Lightweight Widget focused Mason brick cli
-version: 0.1.6
+version: 0.1.7
 homepage: https://github.com/jdde
 repository: https://github.com/jdde/fpx
 #publish_to: none
