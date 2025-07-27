@@ -72,8 +72,13 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email 'github-actions[bot]@users.noreply.github.com'
           git add coverage_badge.svg
-          git commit -m 'Automatically updated coverage badge [skip ci]'
-          git push
+          # Only commit if there are changes to the coverage badge
+          if git diff --staged --quiet; then
+            echo "No changes to coverage badge, skipping commit"
+          else
+            git commit -m 'Automatically updated coverage badge [skip ci]'
+            git push
+          fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
