@@ -53,24 +53,11 @@ jobs:
           path: coverage/lcov.info
           min_coverage: 70
 
-      - name: 📈 Extract Coverage Percentage and Generate Badge
+      - name: 📈 Generate Coverage Badge
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
-          # Extract coverage percentage from lcov.info and create coverage.json
-          COVERAGE=$(lcov --summary coverage/lcov.info 2>&1 | grep -E 'lines\.*:' | grep -oE '[0-9]+\.[0-9]+%' | sed 's/%//' | head -1)
-          echo "Coverage: $COVERAGE%"
-          
-          # Create coverage.json in the format expected by the Python script
-          cat > coverage.json << EOF
-          {
-            "totals": {
-              "percent_covered_display": "$COVERAGE"
-            }
-          }
-          EOF
-          
-          # Generate coverage badge using Python script
-          python .github/scripts/generate_coverage_badge.py
+          # Generate coverage badge directly from lcov.info using Python script
+          python .github/scripts/generate_coverage_badge.py coverage/lcov.info
 
       - name: 📤 Commit Coverage Badge
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
