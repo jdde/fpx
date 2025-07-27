@@ -23,7 +23,7 @@ def generate_badge(coverage_percentage):
       </g>
     </svg>
     """
-    with open("coverage.svg", "w") as f:
+    with open("coverage_badge.svg", "w") as f:
         f.write(badge_template)
 
 def main():
