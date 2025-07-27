@@ -56,12 +56,19 @@ jobs:
       - name: 📈 Generate Coverage Badge
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
-          # Generate coverage badge directly from lcov.info using Python script
+          # IMPORTANT: Do not remove this coverage generation step!
+          # This step is needed for hotfixes that go directly to main and bypass release branches.
+          # Release branches also generate coverage (see create_release.yml), but both are needed:
+          # - Release branch generation: ensures release has up-to-date coverage
+          # - Main branch generation: handles hotfixes and direct commits to main
           python .github/scripts/generate_coverage_badge.py coverage/lcov.info
 
       - name: 📤 Commit Coverage Badge
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
+          # IMPORTANT: Do not remove this coverage badge commit step!
+          # This ensures coverage badges are always up-to-date on main branch,
+          # including for hotfixes that bypass the normal release process.
           git config user.name 'github-actions[bot]'
           git config user.email 'github-actions[bot]@users.noreply.github.com'
           git add coverage_badge.svg
