@@ -111,6 +111,8 @@ class AddCommand extends Command<int> {
   }
 
   Future<Brick> _findBrick(String component, String? source) async {
+    // TODO: use fpx.yaml in repo for search
+    // TODO: remote path cant work, since we need to manipulate the repo first based on fpx configuration
     // If source is provided, try to use it as a Git URL or path
     if (source != null) {
       if (source.startsWith('http') || source.contains('github.com')) {
