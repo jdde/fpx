@@ -1,12 +1,26 @@
 import 'dart:io';
 
 import 'package:mason/mason.dart';
+import 'package:mason_logger/mason_logger.dart';
+import 'package:path/path.dart' as path;
 import 'package:yaml/yaml.dart';
+
+import 'repository_post_clone_service.dart';
 
 /// Service for managing and searching brick repositories.
 class RepositoryService {
+  /// Constructor
+  RepositoryService({
+    Logger? logger,
+  }) : _logger = logger ?? Logger();
+
   static const String configFileName = '.fpx_repositories.yaml';
   static const String _userConfigFileName = '.fpx_repositories.local.yaml';
+  static const String _repositoriesDir = '.fpx_repositories';
+
+  final Logger _logger;
+  late final RepositoryPostCloneService _postCloneService = 
+      RepositoryPostCloneService(logger: _logger);
 
   /// Load repository configuration from file.
   Future<Map<String, dynamic>> loadRepositoryConfig() async {
@@ -57,6 +71,10 @@ class RepositoryService {
 
         if (repositories.containsKey(repoName)) {
           final repoConfig = repositories[repoName] as Map<String, dynamic>;
+          
+          // Ensure repository is cloned before searching
+          await _ensureRepositoryCloned(repoName, repoConfig);
+          
           final brick = await _createBrickFromRepository(
             repoName,
             repoConfig,
@@ -78,25 +96,39 @@ class RepositoryService {
         final repoName = entry.key;
         final repoConfig = entry.value as Map<String, dynamic>;
 
-        // Try to find brick in this repository
-        final brick = await _createBrickFromRepository(
-          repoName,
-          repoConfig,
-          brickIdentifier,
-        );
+        // Ensure repository is cloned before searching
+        await _ensureRepositoryCloned(repoName, repoConfig);
+        
+        // Check if component exists in auto-detected components
+        final detectedComponents = await detectComponents(repoName);
+        if (detectedComponents.contains(brickIdentifier)) {
+          final brick = await _createBrickFromRepository(
+            repoName,
+            repoConfig,
+            brickIdentifier,
+          );
 
-        if (brick != null) {
-          results.add(BrickSearchResult(
-            brickName: brickIdentifier,
-            repositoryName: repoName,
-            brick: brick,
-            fullPath: brickIdentifier,
-          ));
+          if (brick != null) {
+            results.add(BrickSearchResult(
+              brickName: brickIdentifier,
+              repositoryName: repoName,
+              brick: brick,
+              fullPath: brickIdentifier,
+            ));
+          }
         }
       }
     }
 
     return results;
+  }
+
+  /// Ensure a repository is cloned locally, clone it if it's not.
+  Future<void> _ensureRepositoryCloned(String repoName, Map<String, dynamic> repoConfig) async {
+    if (!await isRepositoryCloned(repoName)) {
+      final url = repoConfig['url'] as String;
+      await cloneRepository(repoName, url);
+    }
   }
 
   /// Create a brick from repository configuration.
@@ -106,10 +138,34 @@ class RepositoryService {
     String brickPath,
   ) async {
     final url = repoConfig['url'] as String;
-    final basePath = repoConfig['path'] as String;
-
+    
     try {
-      // Construct the full path to the brick
+      // Check if repository is cloned locally
+      if (await isRepositoryCloned(repoName)) {
+        // Get component configuration from fpx.yaml
+        final componentConfig = await getComponentConfig(repoName, brickPath);
+        
+        if (componentConfig != null) {
+          // Use fpx.yaml configuration to determine brick path
+          final configuredPath = componentConfig['path'] as String?;
+          if (configuredPath != null) {
+            final localPath = path.join(getRepositoryPath(repoName), configuredPath);
+            return Brick.path(localPath);
+          }
+        }
+        
+        // Fallback: try standard brick location in cloned repo
+        final basePath = repoConfig['path'] as String;
+        final fullBrickPath = '$basePath/$brickPath';
+        final localPath = path.join(getRepositoryPath(repoName), fullBrickPath);
+        
+        if (await Directory(localPath).exists() || await File(path.join(localPath, 'brick.yaml')).exists()) {
+          return Brick.path(localPath);
+        }
+      }
+      
+      // Fallback to Git-based brick (original behavior)
+      final basePath = repoConfig['path'] as String;
       final fullBrickPath = '$basePath/$brickPath';
       final gitPath = GitPath(url, path: fullBrickPath);
       return Brick.git(gitPath);
@@ -208,6 +264,171 @@ class RepositoryService {
 
     final yamlContent = _mapToYaml(config);
     await configFile.writeAsString(header + yamlContent);
+  }
+
+  /// Clone a repository locally for processing.
+  Future<Directory> cloneRepository(String name, String url) async {
+    final repoDir = Directory(path.join(_repositoriesDir, name));
+    
+    // Remove existing directory if it exists
+    if (await repoDir.exists()) {
+      await repoDir.delete(recursive: true);
+    }
+    
+    // Create repositories directory
+    await Directory(_repositoriesDir).create(recursive: true);
+    
+    // Clone the repository
+    final result = await Process.run(
+      'git',
+      ['clone', url, repoDir.path],
+      workingDirectory: Directory.current.path,
+    );
+    
+    if (result.exitCode != 0) {
+      throw Exception('Failed to clone repository: ${result.stderr}');
+    }
+    
+    // Apply post-clone processing
+    await _postCloneService.processClonedRepository(
+      repositoryName: name,
+      repositoryPath: repoDir.path,
+      repositoryUrl: url,
+    );
+    
+    return repoDir;
+  }
+
+  /// Update an existing cloned repository.
+  Future<void> updateRepository(String name) async {
+    final repoDir = Directory(path.join(_repositoriesDir, name));
+    
+    if (!await repoDir.exists()) {
+      throw Exception('Repository "$name" not found locally');
+    }
+    
+    // Pull latest changes
+    final result = await Process.run(
+      'git',
+      ['pull'],
+      workingDirectory: repoDir.path,
+    );
+    
+    if (result.exitCode != 0) {
+      throw Exception('Failed to update repository: ${result.stderr}');
+    }
+  }
+
+  /// Get the local directory path for a cloned repository.
+  String getRepositoryPath(String name) {
+    return path.join(_repositoriesDir, name);
+  }
+
+  /// Check if a repository is cloned locally.
+  Future<bool> isRepositoryCloned(String name) async {
+    final repoDir = Directory(path.join(_repositoriesDir, name));
+    return await repoDir.exists();
+  }
+
+  /// Read and parse fpx.yaml from a cloned repository.
+  Future<Map<String, dynamic>?> readFpxConfig(String repositoryName) async {
+    final repoPath = getRepositoryPath(repositoryName);
+    final fpxConfigFile = File(path.join(repoPath, 'fpx.yaml'));
+    
+    if (!await fpxConfigFile.exists()) {
+      return null;
+    }
+    
+    try {
+      final content = await fpxConfigFile.readAsString();
+      final yamlMap = loadYaml(content);
+      if (yamlMap is Map) {
+        return Map<String, dynamic>.from(yamlMap);
+      }
+    } catch (e) {
+      // Handle YAML parsing errors
+    }
+    
+    return null;
+  }
+
+  /// Auto-detect components in a cloned repository based on fpx.yaml.
+  Future<List<String>> detectComponents(String repositoryName) async {
+    final fpxConfig = await readFpxConfig(repositoryName);
+    final components = <String>[];
+    
+    if (fpxConfig == null) {
+      // Fallback: scan for brick.yaml files in the repository
+      return await _scanForBricks(repositoryName);
+    }
+    
+    // Parse components from fpx.yaml
+    final componentsConfig = fpxConfig['components'];
+    if (componentsConfig is Map) {
+      components.addAll(componentsConfig.keys.cast<String>());
+    }
+    
+    // Also check for a 'bricks' section for backward compatibility
+    final bricksConfig = fpxConfig['bricks'];
+    if (bricksConfig is Map) {
+      components.addAll(bricksConfig.keys.cast<String>());
+    }
+    
+    return components;
+  }
+
+  /// Scan repository directory for brick.yaml files.
+  Future<List<String>> _scanForBricks(String repositoryName) async {
+    final repoPath = getRepositoryPath(repositoryName);
+    final repoDir = Directory(repoPath);
+    final components = <String>[];
+    
+    if (!await repoDir.exists()) {
+      return components;
+    }
+    
+    // Look for brick.yaml files recursively
+    await for (final entity in repoDir.list(recursive: true)) {
+      if (entity is File && path.basename(entity.path) == 'brick.yaml') {
+        // Extract component name from the directory structure
+        final relativePath = path.relative(entity.path, from: repoPath);
+        final dirPath = path.dirname(relativePath);
+        
+        // Skip if it's in the root or too nested
+        final pathParts = path.split(dirPath);
+        if (pathParts.length >= 1 && pathParts.first != '.') {
+          final componentName = pathParts.last;
+          if (!components.contains(componentName)) {
+            components.add(componentName);
+          }
+        }
+      }
+    }
+    
+    return components;
+  }
+
+  /// Get component configuration from fpx.yaml.
+  Future<Map<String, dynamic>?> getComponentConfig(
+    String repositoryName,
+    String componentName,
+  ) async {
+    final fpxConfig = await readFpxConfig(repositoryName);
+    if (fpxConfig == null) return null;
+    
+    // Check components section first
+    final componentsConfig = fpxConfig['components'];
+    if (componentsConfig is Map && componentsConfig.containsKey(componentName)) {
+      return Map<String, dynamic>.from(componentsConfig[componentName] as Map);
+    }
+    
+    // Check bricks section for backward compatibility
+    final bricksConfig = fpxConfig['bricks'];
+    if (bricksConfig is Map && bricksConfig.containsKey(componentName)) {
+      return Map<String, dynamic>.from(bricksConfig[componentName] as Map);
+    }
+    
+    return null;
   }
 
   String _mapToYaml(Map<String, dynamic> map, [int indent = 0]) {

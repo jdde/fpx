@@ -1,0 +1,602 @@
+import 'dart:io';
+
+import 'package:mason_logger/mason_logger.dart';
+import 'package:path/path.dart' as path;
+
+import '../models/models.dart';
+
+/// Service for manipulating cloned repositories after they are cloned.
+/// 
+/// This service adds custom logic to process repositories immediately
+/// after they are cloned, such as adding __brick__ directories or
+/// other custom modifications.
+class RepositoryPostCloneService {
+  /// Constructor
+  const RepositoryPostCloneService({
+    required Logger logger,
+  }) : _logger = logger;
+
+  final Logger _logger;
+
+  /// Process a cloned repository by applying custom manipulations.
+  /// 
+  /// This method is called after a repository is successfully cloned
+  /// and applies various transformations to the cloned repository.
+  /// 
+  /// [repositoryName] - The name of the repository
+  /// [repositoryPath] - The local path where the repository was cloned
+  /// [repositoryUrl] - The original URL of the repository
+  /// [fpxConfig] - The fpx configuration object. If null, uses default config.
+  Future<void> processClonedRepository({
+    required String repositoryName,
+    required String repositoryPath,
+    required String repositoryUrl,
+    FpxConfig? fpxConfig,
+  }) async {
+    _logger.info('🔧 Processing cloned repository "$repositoryName"...');
+
+    // Use provided config or default config
+    final config = fpxConfig ?? FpxConfig.defaultConfig();
+
+    try {
+      // Add __brick__ to the repository
+      await _addBricksToRepository(repositoryPath, config);
+      
+      // Future: Add other custom manipulations here
+      // await _addCustomConfigurations(repositoryPath, config);
+      // await _setupCustomStructure(repositoryPath, config);
+      
+      _logger.success('✅ Repository processing completed successfully');
+    } catch (e) {
+      _logger.warn('⚠️  Failed to process repository: $e');
+      // Don't throw - repository is still usable even if processing fails
+    }
+  }
+
+  /// Add __brick__ to the cloned repository.
+  /// 
+  /// This method creates a __brick__ directory structure beside each widget
+  /// with brick.yaml metadata files and copies the widget files.
+  /// 
+  /// [repositoryPath] - The path to the cloned repository
+  /// [config] - The fpx configuration object
+  Future<void> _addBricksToRepository(String repositoryPath, FpxConfig config) async {
+    try {
+      // Find all available widgets in the configured bricks path
+      final availableWidgets = await _findAvailableWidgets(repositoryPath, config);
+      
+      _logger.info('🔍 Found ${availableWidgets.length} widget(s):');
+      
+      for (final widget in availableWidgets) {
+        _logger.info('  • ${widget.name} (${widget.files.length} file(s))');
+        
+        // Create __brick__ directory beside the widget
+        final widgetBricksDir = Directory(path.join(widget.path, '__brick__'));
+        await widgetBricksDir.create(recursive: true);
+        
+        // Create brick.yaml file
+        await _createBrickYaml(repositoryPath, widget.path, widget.name);
+        
+        // Copy widget files into __brick__ folder
+        await _copyWidgetFiles(widget, widgetBricksDir.path);
+        
+        // Preprocess widget files to replace foundation constants with actual values
+        await _preprocessWidgetFiles(repositoryPath, widgetBricksDir.path, config);
+        
+        _logger.detail('    Created __brick__ for ${widget.name}');
+      }
+      
+      _logger.success('✅ Created __brick__ structures for all widgets');
+    } catch (e) {
+      _logger.warn('Failed to process widgets: $e');
+      rethrow;
+    }
+  }
+
+  /// Find all available widgets in the configured bricks path.
+  /// 
+  /// This method scans the bricks directory to identify widget folders
+  /// and their associated files.
+  /// 
+  /// [repositoryPath] - The path to the cloned repository
+  /// [config] - The fpx configuration object
+  /// 
+  /// Returns a list of [WidgetInfo] objects representing found widgets.
+  Future<List<WidgetInfo>> _findAvailableWidgets(String repositoryPath, FpxConfig config) async {
+    final bricksPath = path.join(repositoryPath, config.bricks.path);
+    final bricksDir = Directory(bricksPath);
+    
+    if (!await bricksDir.exists()) {
+      _logger.warn('Bricks directory not found: ${bricksDir.path}');
+      return [];
+    }
+    
+    final widgets = <WidgetInfo>[];
+    
+    try {
+      // List all directories in the bricks path
+      final entities = await bricksDir.list(followLinks: false).toList();
+      
+      for (final entity in entities) {
+        if (entity is Directory) {
+          final widgetName = path.basename(entity.path);
+          final widgetFiles = await _getWidgetFiles(entity.path);
+          
+          if (widgetFiles.isNotEmpty) {
+            widgets.add(WidgetInfo(
+              name: widgetName,
+              path: entity.path,
+              files: widgetFiles,
+            ));
+          }
+        }
+      }
+      
+      // Sort widgets by name for consistent output
+      widgets.sort((a, b) => a.name.compareTo(b.name));
+      
+    } catch (e) {
+      _logger.warn('Error scanning widgets directory: $e');
+    }
+    
+    return widgets;
+  }
+
+  /// Get all Dart files in a widget directory.
+  /// 
+  /// [widgetPath] - The path to the widget directory
+  /// 
+  /// Returns a list of relative file paths within the widget directory.
+  Future<List<String>> _getWidgetFiles(String widgetPath) async {
+    final widgetDir = Directory(widgetPath);
+    final files = <String>[];
+    
+    try {
+      final entities = await widgetDir.list(recursive: true, followLinks: false).toList();
+      
+      for (final entity in entities) {
+        if (entity is File && entity.path.endsWith('.dart')) {
+          // Get relative path from widget directory
+          final relativePath = path.relative(entity.path, from: widgetPath);
+          files.add(relativePath);
+        }
+      }
+      
+      // Sort files for consistent output
+      files.sort();
+    } catch (e) {
+      _logger.warn('Error reading widget files in $widgetPath: $e');
+    }
+    
+    return files;
+  }
+
+  /// Create a brick.yaml file for a widget.
+  /// 
+  /// [repositoryPath] - The path to the repository root
+  /// [widgetPath] - The path to the widget directory
+  /// [widgetName] - The name of the widget
+  Future<void> _createBrickYaml(String repositoryPath, String widgetPath, String widgetName) async {
+    final brickYamlFile = File(path.join(widgetPath, 'brick.yaml'));
+    
+    // Read version from repository's pubspec.yaml
+    final version = await _getRepositoryVersion(repositoryPath);
+    
+    final brickYamlContent = '''name: $widgetName
+description: A $widgetName widget component
+version: $version
+
+vars:
+  name:
+    type: string
+    description: The name for this component
+    default: $widgetName
+    prompt: What is the name of this component?
+''';
+
+    await brickYamlFile.writeAsString(brickYamlContent);
+    _logger.detail('Created brick.yaml for $widgetName');
+  }
+
+  /// Get the version from the repository's pubspec.yaml file.
+  /// 
+  /// [repositoryPath] - The path to the repository root
+  /// 
+  /// Returns the version string from pubspec.yaml, or a default version if not found.
+  Future<String> _getRepositoryVersion(String repositoryPath) async {
+    final pubspecFile = File(path.join(repositoryPath, 'pubspec.yaml'));
+    
+    if (!await pubspecFile.exists()) {
+      _logger.warn('pubspec.yaml not found, using default version');
+      return '0.1.0+1';
+    }
+    
+    try {
+      final content = await pubspecFile.readAsString();
+      final lines = content.split('\n');
+      
+      for (final line in lines) {
+        final trimmedLine = line.trim();
+        if (trimmedLine.startsWith('version:')) {
+          final version = trimmedLine.substring(8).trim();
+          _logger.detail('Found repository version: $version');
+          return version;
+        }
+      }
+      
+      _logger.warn('Version not found in pubspec.yaml, using default');
+      return '0.1.0+1';
+    } catch (e) {
+      _logger.warn('Error reading pubspec.yaml: $e, using default version');
+      return '0.1.0+1';
+    }
+  }
+
+  /// Copy widget files into the __brick__ directory.
+  /// 
+  /// [widget] - The widget information object
+  /// [bricksPath] - The path to the __brick__ directory
+  Future<void> _copyWidgetFiles(WidgetInfo widget, String bricksPath) async {
+    for (final file in widget.files) {
+      final sourceFile = File(path.join(widget.path, file));
+      final targetFile = File(path.join(bricksPath, file));
+      
+      // Ensure target directory exists
+      await targetFile.parent.create(recursive: true);
+      
+      // Copy the file
+      await sourceFile.copy(targetFile.path);
+      _logger.detail('    Copied $file to __brick__');
+    }
+  }
+
+  /// Preprocess widget files to replace foundation constants with actual values.
+  /// 
+  /// [repositoryPath] - The path to the repository root
+  /// [bricksPath] - The path to the __brick__ directory containing copied files
+  /// [config] - The fpx configuration object
+  Future<void> _preprocessWidgetFiles(String repositoryPath, String bricksPath, FpxConfig config) async {
+    _logger.detail('🔧 Preprocessing widget files...');
+    
+    // Parse foundation files to extract constants
+    final foundationConstants = await _parseFoundationFiles(repositoryPath, config);
+    
+    if (foundationConstants.isEmpty) {
+      _logger.warn('No foundation constants found to replace');
+      return;
+    }
+    
+    _logger.detail('Found ${foundationConstants.length} foundation constants');
+    
+    // Get foundation file paths for import removal
+    final foundationPaths = config.variables.foundation.paths;
+    
+    // Process all Dart files in the __brick__ directory
+    final bricksDir = Directory(bricksPath);
+    final dartFiles = await bricksDir
+        .list(recursive: true, followLinks: false)
+        .where((entity) => entity is File && entity.path.endsWith('.dart'))
+        .cast<File>()
+        .toList();
+    
+    for (final file in dartFiles) {
+      await _replaceFoundationConstants(file, foundationConstants, foundationPaths);
+    }
+    
+    _logger.detail('✅ Preprocessing completed');
+  }
+
+  /// Parse foundation files to extract constant definitions.
+  /// 
+  /// [repositoryPath] - The path to the repository root
+  /// [config] - The fpx configuration object
+  /// 
+  /// Returns a map of constant names to their values.
+  Future<Map<String, String>> _parseFoundationFiles(String repositoryPath, FpxConfig config) async {
+    final constants = <String, String>{};
+    
+    try {
+      // Parse all foundation files dynamically
+      for (final entry in config.variables.foundation.entries) {
+        final foundationKey = entry.key;
+        final foundationItem = entry.value;
+        final foundationFile = File(path.join(repositoryPath, foundationItem.path));
+        
+        if (await foundationFile.exists()) {
+          final className = await _extractClassName(foundationFile);
+          if (className != null) {
+            final foundationConstants = await _parseConstantsFromFile(foundationFile, className);
+            constants.addAll(foundationConstants);
+            _logger.detail('Processed $foundationKey: ${foundationConstants.length} constants from $className');
+          }
+        } else {
+          _logger.warn('Foundation file not found: ${foundationItem.path}');
+        }
+      }
+    } catch (e) {
+      _logger.warn('Error parsing foundation files: $e');
+    }
+    
+    return constants;
+  }
+
+  /// Extract the main class name from a foundation file.
+  /// 
+  /// [file] - The foundation file to analyze
+  /// 
+  /// Returns the class name if found, null otherwise.
+  Future<String?> _extractClassName(File file) async {
+    try {
+      final content = await file.readAsString();
+      
+      // Look for class declarations - handle various patterns
+      final classPatterns = [
+        RegExp(r'class\s+([A-Za-z_][A-Za-z0-9_]*)\s*\{'),           // class ClassName {
+        RegExp(r'class\s+([A-Za-z_][A-Za-z0-9_]*)\s+extends'),      // class ClassName extends
+        RegExp(r'class\s+([A-Za-z_][A-Za-z0-9_]*)\s+implements'),   // class ClassName implements
+        RegExp(r'class\s+([A-Za-z_][A-Za-z0-9_]*)\s+with'),         // class ClassName with
+      ];
+      
+      for (final pattern in classPatterns) {
+        final match = pattern.firstMatch(content);
+        if (match != null) {
+          final className = match.group(1)!;
+          _logger.detail('Found class: $className in ${path.basename(file.path)}');
+          return className;
+        }
+      }
+      
+      _logger.warn('No class found in ${path.basename(file.path)}');
+      return null;
+    } catch (e) {
+      _logger.warn('Error extracting class name from ${file.path}: $e');
+      return null;
+    }
+  }
+
+  /// Parse constants from a single foundation file.
+  /// 
+  /// [file] - The foundation file to parse
+  /// [className] - The name of the class containing constants
+  /// 
+  /// Returns a map of constant names to their values.
+  Future<Map<String, String>> _parseConstantsFromFile(File file, String className) async {
+    final constants = <String, String>{};
+    
+    try {
+      final content = await file.readAsString();
+      
+      // More comprehensive regex to match all static const and static final declarations
+      // Matches: static const/final [Type] [name] = [value];
+      // Handles multi-word types, numbers, underscores in names, and multiline values
+      final constRegex = RegExp(
+        r'static\s+(?:const|final)\s+(\w+(?:\<[\w\s,<>]+\>)?)\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*=\s*([^;]+);',
+        multiLine: true,
+        dotAll: true,
+      );
+      
+      final matches = constRegex.allMatches(content);
+      
+      for (final match in matches) {
+        final constantName = match.group(2)!.trim();
+        final constantValue = match.group(3)!.trim();
+        
+        // Clean up the value - remove extra whitespace and newlines
+        final cleanValue = constantValue.replaceAll(RegExp(r'\s+'), ' ').trim();
+        
+        // Store with full class prefix for replacement
+        constants['$className.$constantName'] = cleanValue;
+        
+        _logger.detail('Found constant: $className.$constantName = $cleanValue');
+      }
+      
+      _logger.detail('Parsed ${constants.length} constants from $className');
+    } catch (e) {
+      _logger.warn('Error parsing constants from ${file.path}: $e');
+    }
+    
+    return constants;
+  }
+
+  /// Replace foundation constants in a widget file with their actual values.
+  /// 
+  /// [file] - The widget file to process
+  /// [constants] - Map of constant names to their values
+  /// [foundationPaths] - List of foundation file paths for import removal
+  Future<void> _replaceFoundationConstants(File file, Map<String, String> constants, List<String> foundationPaths) async {
+    try {
+      String content = await file.readAsString();
+      bool wasModified = false;
+      
+      // Sort constants by length (longest first) to avoid partial replacements
+      final sortedConstants = constants.entries.toList()
+        ..sort((a, b) => b.key.length.compareTo(a.key.length));
+      
+      // Replace each constant with its value using word boundaries
+      for (final entry in sortedConstants) {
+        final constantName = entry.key;
+        final constantValue = entry.value;
+        
+        // Use word boundary regex to ensure we're replacing complete identifiers
+        final escapedConstantName = RegExp.escape(constantName);
+        final constantRegex = RegExp(r'\b' + escapedConstantName + r'\b');
+        
+        if (constantRegex.hasMatch(content)) {
+          content = content.replaceAll(constantRegex, constantValue);
+          wasModified = true;
+          _logger.detail('    Replaced $constantName with $constantValue');
+        }
+      }
+      
+      // Remove foundation imports if any constants were replaced
+      if (wasModified) {
+        content = _removeFoundationImports(content, foundationPaths);
+        await file.writeAsString(content);
+        _logger.detail('    Preprocessed ${path.basename(file.path)}');
+      }
+    } catch (e) {
+      _logger.warn('Error processing ${file.path}: $e');
+    }
+  }
+
+  /// Remove import statements that reference foundation files.
+  /// 
+  /// [content] - The file content to process
+  /// [foundationPaths] - List of foundation file paths to match against
+  /// 
+  /// Returns the content with foundation imports removed.
+  String _removeFoundationImports(String content, List<String> foundationPaths) {
+    final lines = content.split('\n');
+    final filteredLines = <String>[];
+    
+    // Extract just the filenames from foundation paths for matching
+    final foundationFileNames = foundationPaths
+        .map((p) => path.basename(p))
+        .toSet();
+    
+    for (final line in lines) {
+      final trimmedLine = line.trim();
+      
+      if (trimmedLine.startsWith('import ')) {
+        bool shouldRemove = false;
+        
+        // PRESERVE Flutter, Dart, and other standard imports
+        if (_isStandardImport(trimmedLine)) {
+          _logger.detail('    Preserved standard import: $trimmedLine');
+          filteredLines.add(line);
+          continue;
+        }
+        
+        // Check if import contains any specific foundation file names
+        for (final fileName in foundationFileNames) {
+          if (trimmedLine.contains(fileName)) {
+            shouldRemove = true;
+            break;
+          }
+        }
+        
+        // Check for foundation directory patterns
+        if (!shouldRemove && (
+            trimmedLine.contains('/foundation/') || 
+            trimmedLine.contains('/src/foundation/'))) {
+          shouldRemove = true;
+        }
+        
+        // Check if it's a main package import (like the entire design system)
+        if (!shouldRemove && _isMainPackageImport(trimmedLine, foundationPaths)) {
+          shouldRemove = true;
+        }
+        
+        if (shouldRemove) {
+          _logger.detail('    Removed import: $trimmedLine');
+          continue;
+        }
+      }
+      
+      filteredLines.add(line);
+    }
+    
+    return filteredLines.join('\n');
+  }
+
+  /// Check if an import is a standard Flutter/Dart import that should be preserved.
+  bool _isStandardImport(String importLine) {
+    return importLine.contains('dart:') ||
+           importLine.contains('package:flutter/') ||
+           importLine.contains('package:material/') ||
+           importLine.contains('package:cupertino/') ||
+           importLine.contains('package:widgets/') ||
+           // Common third-party packages
+           importLine.contains('package:google_fonts/') ||
+           importLine.contains('package:http/') ||
+           importLine.contains('package:path/') ||
+           importLine.contains('package:meta/') ||
+           // Any other package that doesn't seem to be the current project
+           (_isThirdPartyPackage(importLine));
+  }
+
+  /// Check if an import is a third-party package (not the current project).
+  bool _isThirdPartyPackage(String importLine) {
+    // This is a heuristic: if it's a package import but doesn't contain
+    // common foundation-related terms, it's likely a third-party package
+    if (!importLine.contains('package:')) return false;
+    
+    // Extract package name from import
+    final packageMatch = RegExp(r"package:([^/]+)/").firstMatch(importLine);
+    if (packageMatch != null) {
+      final packageName = packageMatch.group(1)!.toLowerCase();
+      
+      // Common foundation/design system package name patterns to exclude
+      final foundationPatterns = [
+        'ui', 'design', 'theme', 'foundation', 'components', 'widgets',
+        'system', 'tokens', 'core', 'base', 'lib', 'app'
+      ];
+      
+      // If package name doesn't contain foundation-related terms, preserve it
+      return !foundationPatterns.any((pattern) => packageName.contains(pattern));
+    }
+    
+    return false;
+  }
+
+  /// Check if an import is the main package import (entire design system).
+  bool _isMainPackageImport(String importLine, List<String> foundationPaths) {
+    // If the import is a package import and any foundation path starts with
+    // the same base path, it's likely the main package
+    if (!importLine.contains('package:')) return false;
+    
+    // Extract the package name
+    final packageMatch = RegExp(r'package:([^/\s]+)').firstMatch(importLine);
+    if (packageMatch != null) {
+      final packageName = packageMatch.group(1)!;
+      
+      // Heuristic: if the import is something like package:my_ui/my_ui.dart
+      // or just contains the package name as the main barrel file
+      if (importLine.contains('$packageName/$packageName.dart') ||
+          importLine.contains('$packageName.dart')) {
+        _logger.detail('    Identified main package import: $packageName');
+        return true;
+      }
+      
+      // Additional check: if foundation paths suggest this is the current project
+      // and the import references the same package structure
+      for (final foundationPath in foundationPaths) {
+        if (foundationPath.contains('lib/') && 
+            importLine.contains('package:$packageName/')) {
+          // This is likely importing from the same project
+          _logger.detail('    Identified project import: $packageName');
+          return true;
+        }
+      }
+    }
+    
+    return false;
+  }
+}
+
+/// Information about a discovered widget.
+/// 
+/// Contains metadata about a widget found in the bricks directory,
+/// including its name, location, and associated files.
+class WidgetInfo {
+  /// Constructor
+  const WidgetInfo({
+    required this.name,
+    required this.path,
+    required this.files,
+  });
+
+  /// The name of the widget (directory name)
+  final String name;
+
+  /// The full path to the widget directory
+  final String path;
+
+  /// List of Dart files in the widget directory (relative paths)
+  final List<String> files;
+
+  @override
+  String toString() {
+    return 'WidgetInfo(name: $name, path: $path, files: $files)';
+  }
+}
