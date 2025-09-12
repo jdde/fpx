@@ -40,6 +40,8 @@ To install locally for testing:
 
 ```sh
 dart pub global activate --source=path <path to this package>
+#remove the cache from previous build to use the current version
+rm -rf .dart_tool
 ```
 
 ## Development Commands
