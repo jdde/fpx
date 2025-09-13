@@ -271,6 +271,9 @@ vars:
     // Get foundation file paths for import removal
     final foundationPaths = config.variables.foundation.paths;
     
+    // Track third-party dependencies across all files
+    final thirdPartyDependencies = <String>{};
+    
     // Process all Dart files in the __brick__ directory
     final bricksDir = Directory(bricksPath);
     final dartFiles = await bricksDir
@@ -280,7 +283,12 @@ vars:
         .toList();
     
     for (final file in dartFiles) {
-      await _replaceFoundationConstants(file, foundationConstants, foundationPaths);
+      await _replaceFoundationConstants(file, foundationConstants, foundationPaths, thirdPartyDependencies);
+    }
+    
+    // Create README.md if there are third-party dependencies
+    if (thirdPartyDependencies.isNotEmpty) {
+      await _createDependenciesReadme(bricksPath, thirdPartyDependencies);
     }
     
     _logger.detail('✅ Preprocessing completed');
@@ -403,7 +411,13 @@ vars:
   /// [file] - The widget file to process
   /// [constants] - Map of constant names to their values
   /// [foundationPaths] - List of foundation file paths for import removal
-  Future<void> _replaceFoundationConstants(File file, Map<String, String> constants, List<String> foundationPaths) async {
+  /// [thirdPartyDependencies] - Set to collect third-party dependencies found
+  Future<void> _replaceFoundationConstants(
+    File file, 
+    Map<String, String> constants, 
+    List<String> foundationPaths,
+    Set<String> thirdPartyDependencies,
+  ) async {
     try {
       String content = await file.readAsString();
       bool wasModified = false;
@@ -428,9 +442,9 @@ vars:
         }
       }
       
-      // Remove foundation imports if any constants were replaced
+      // Remove foundation imports and collect third-party dependencies
       if (wasModified) {
-        content = _removeFoundationImports(content, foundationPaths);
+        content = _removeFoundationImports(content, foundationPaths, thirdPartyDependencies);
         await file.writeAsString(content);
         _logger.detail('    Preprocessed ${path.basename(file.path)}');
       }
@@ -443,9 +457,10 @@ vars:
   /// 
   /// [content] - The file content to process
   /// [foundationPaths] - List of foundation file paths to match against
+  /// [thirdPartyDependencies] - Set to collect third-party dependencies found
   /// 
   /// Returns the content with foundation imports removed.
-  String _removeFoundationImports(String content, List<String> foundationPaths) {
+  String _removeFoundationImports(String content, List<String> foundationPaths, Set<String> thirdPartyDependencies) {
     final lines = content.split('\n');
     final filteredLines = <String>[];
     
@@ -491,6 +506,17 @@ vars:
           _logger.detail('    Removed import: $trimmedLine');
           continue;
         }
+        
+        // If we reach here, it's a third-party import that should be kept
+        // but we need to track it for the README
+        if (trimmedLine.contains('package:') && !_isStandardImport(trimmedLine)) {
+          final packageMatch = RegExp(r'package:([^/\s]+)').firstMatch(trimmedLine);
+          if (packageMatch != null) {
+            final packageName = packageMatch.group(1)!;
+            thirdPartyDependencies.add(packageName);
+            _logger.detail('    Tracked third-party dependency: $packageName');
+          }
+        }
       }
       
       filteredLines.add(line);
@@ -506,37 +532,47 @@ vars:
            importLine.contains('package:material/') ||
            importLine.contains('package:cupertino/') ||
            importLine.contains('package:widgets/') ||
-           // Common third-party packages
-           importLine.contains('package:google_fonts/') ||
-           importLine.contains('package:http/') ||
-           importLine.contains('package:path/') ||
-           importLine.contains('package:meta/') ||
-           // Any other package that doesn't seem to be the current project
-           (_isThirdPartyPackage(importLine));
+           importLine.contains('package:meta/');
   }
 
-  /// Check if an import is a third-party package (not the current project).
-  bool _isThirdPartyPackage(String importLine) {
-    // This is a heuristic: if it's a package import but doesn't contain
-    // common foundation-related terms, it's likely a third-party package
-    if (!importLine.contains('package:')) return false;
+  /// Create a README.md file in the __brick__ directory with dependency information.
+  /// 
+  /// [bricksPath] - The path to the __brick__ directory
+  /// [dependencies] - Set of third-party package names that need to be installed
+  Future<void> _createDependenciesReadme(String bricksPath, Set<String> dependencies) async {
+    final readmeFile = File(path.join(bricksPath, 'README.md'));
     
-    // Extract package name from import
-    final packageMatch = RegExp(r"package:([^/]+)/").firstMatch(importLine);
-    if (packageMatch != null) {
-      final packageName = packageMatch.group(1)!.toLowerCase();
-      
-      // Common foundation/design system package name patterns to exclude
-      final foundationPatterns = [
-        'ui', 'design', 'theme', 'foundation', 'components', 'widgets',
-        'system', 'tokens', 'core', 'base', 'lib', 'app'
-      ];
-      
-      // If package name doesn't contain foundation-related terms, preserve it
-      return !foundationPatterns.any((pattern) => packageName.contains(pattern));
-    }
+    final sortedDependencies = dependencies.toList()..sort();
+    final dependencyList = sortedDependencies.map((dep) => '- $dep').join('\n');
     
-    return false;
+    final readmeContent = '''# Dependencies
+
+This widget requires the following packages to be installed before use:
+
+$dependencyList
+
+## Installation
+
+Add these dependencies to your `pubspec.yaml`:
+
+```yaml
+dependencies:
+${sortedDependencies.map((dep) => '  $dep: ^latest_version').join('\n')}
+```
+
+Then run:
+
+```bash
+flutter pub get
+```
+
+## Note
+
+Please check the latest versions of these packages on [pub.dev](https://pub.dev) and update the version numbers accordingly.
+''';
+
+    await readmeFile.writeAsString(readmeContent);
+    _logger.info('📄 Created README.md with ${dependencies.length} dependencies');
   }
 
   /// Check if an import is the main package import (entire design system).
