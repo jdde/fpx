@@ -367,7 +367,7 @@ vars:
   /// [file] - The foundation file to parse
   /// [className] - The name of the class containing constants
   /// 
-  /// Returns a map of constant names to their values.
+  /// Returns a map of constant names to their values with const prefix when needed.
   Future<Map<String, String>> _parseConstantsFromFile(File file, String className) async {
     final constants = <String, String>{};
     
@@ -377,8 +377,9 @@ vars:
       // More comprehensive regex to match all static const and static final declarations
       // Matches: static const/final [Type] [name] = [value];
       // Handles multi-word types, numbers, underscores in names, and multiline values
+      // Now captures the declaration type (const or final)
       final constRegex = RegExp(
-        r'static\s+(?:const|final)\s+(\w+(?:\<[\w\s,<>]+\>)?)\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*=\s*([^;]+);',
+        r'static\s+(const|final)\s+(\w+(?:\<[\w\s,<>]+\>)?)\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*=\s*([^;]+);',
         multiLine: true,
         dotAll: true,
       );
@@ -386,16 +387,29 @@ vars:
       final matches = constRegex.allMatches(content);
       
       for (final match in matches) {
-        final constantName = match.group(2)!.trim();
-        final constantValue = match.group(3)!.trim();
+        final declarationType = match.group(1)!.trim(); // 'const' or 'final'
+        final constantType = match.group(2)!.trim(); // Type like TextStyle, Color, etc.
+        final constantName = match.group(3)!.trim();
+        final constantValue = match.group(4)!.trim();
         
         // Clean up the value - remove extra whitespace and newlines
         final cleanValue = constantValue.replaceAll(RegExp(r'\s+'), ' ').trim();
         
-        // Store with full class prefix for replacement
-        constants['$className.$constantName'] = cleanValue;
+        // Check if this is a complex object that should be handled specially
+        final replacementValue = _processConstantValue(
+          declarationType, 
+          constantType, 
+          constantName, 
+          cleanValue,
+        );
         
-        _logger.detail('Found constant: $className.$constantName = $cleanValue');
+        if (replacementValue != null) {
+          // Store with full class prefix for replacement
+          constants['$className.$constantName'] = replacementValue;
+          _logger.detail('Found $declarationType: $className.$constantName = $replacementValue');
+        } else {
+          _logger.warn('Skipped complex constant: $className.$constantName (requires manual handling)');
+        }
       }
       
       _logger.detail('Parsed ${constants.length} constants from $className');
@@ -404,6 +418,223 @@ vars:
     }
     
     return constants;
+  }
+
+  /// Process a constant value to determine the best replacement strategy.
+  /// 
+  /// [declarationType] - Whether the constant was declared as 'const' or 'final'
+  /// [constantType] - The type of the constant (e.g., 'TextStyle', 'Color', etc.)
+  /// [constantName] - The name of the constant
+  /// [constantValue] - The raw value string from the source code
+  /// 
+  /// Returns the processed replacement value, or null if the constant should be skipped.
+  String? _processConstantValue(
+    String declarationType, 
+    String constantType, 
+    String constantName, 
+    String constantValue,
+  ) {
+    // Handle simple primitive types and direct constructors
+    if (_isSimpleConstant(constantType, constantValue)) {
+      // For primitive values, never add const keyword
+      if (_isPrimitiveValue(constantValue)) {
+        return constantValue;
+      }
+      
+      // For constructor calls and complex objects, preserve const if original was const
+      if (_needsConstKeyword(constantValue)) {
+        return declarationType == 'const' ? 'const $constantValue' : constantValue;
+      }
+      
+      // For simple references (like FontWeight.w400), don't add const
+      return constantValue;
+    }
+
+    // Handle TextStyle specifically - convert complex TextStyle to simpler equivalent
+    if (constantType == 'TextStyle' && _isComplexTextStyle(constantValue)) {
+      final simpleTextStyle = _convertToSimpleTextStyle(constantValue);
+      if (simpleTextStyle != null) {
+        return declarationType == 'const' ? 'const $simpleTextStyle' : simpleTextStyle;
+      }
+    }
+
+    // Handle Color types - try to extract simple color values
+    if (constantType == 'Color' && _isComplexColor(constantValue)) {
+      final simpleColor = _convertToSimpleColor(constantValue);
+      if (simpleColor != null) {
+        return declarationType == 'const' ? 'const $simpleColor' : simpleColor;
+      }
+    }
+
+    // For other complex objects, skip replacement and let user handle manually
+    _logger.warn('Skipping complex $constantType constant: $constantName');
+    return null;
+  }
+
+  /// Check if a value is a primitive type that doesn't need const keyword.
+  bool _isPrimitiveValue(String constantValue) {
+    final trimmedValue = constantValue.trim();
+    
+    final primitivePatterns = [
+      RegExp(r'^\d+$'), // Plain integers: 42
+      RegExp(r'^\d+\.\d+$'), // Plain decimals: 4.0, 8.5
+      RegExp(r'^true|false$'), // Booleans: true, false
+      RegExp(r'^"[^"]*"$'), // String literals: "hello"
+      RegExp(r"^'[^']*'$"), // String literals: 'hello'
+      RegExp(r'^null$'), // null value
+    ];
+    
+    return primitivePatterns.any((pattern) => pattern.hasMatch(trimmedValue));
+  }
+
+  /// Check if a value needs the const keyword (constructor calls, etc.).
+  bool _needsConstKeyword(String constantValue) {
+    final trimmedValue = constantValue.trim();
+    
+    final constRequiredPatterns = [
+      RegExp(r'^\w+\('), // Constructor calls: Color(0xFF123456), EdgeInsets.all(8)
+      RegExp(r'^\w+\.\w+\('), // Named constructor calls: EdgeInsets.symmetric(...)
+    ];
+    
+    return constRequiredPatterns.any((pattern) => pattern.hasMatch(trimmedValue));
+  }
+
+  /// Check if a constant value is simple enough to be replaced directly.
+  bool _isSimpleConstant(String constantType, String constantValue) {
+    // Handle primitive types and simple constructors
+    final simplePatterns = [
+      RegExp(r'^\d+$'), // Plain numbers
+      RegExp(r'^\d+\.\d+$'), // Decimal numbers
+      RegExp(r'^true|false$'), // Booleans
+      RegExp(r'^"[^"]*"$'), // String literals
+      RegExp(r"^'[^']*'$"), // String literals with single quotes
+      RegExp(r'^FontWeight\.w\d+$'), // FontWeight constants
+      RegExp(r'^EdgeInsets\.(all|symmetric|only)\([^)]+\)$'), // Simple EdgeInsets
+      RegExp(r'^BorderRadius\.(all|circular)\([^)]+\)$'), // Simple BorderRadius
+      RegExp(r'^Duration\([^)]+\)$'), // Duration constructors
+      RegExp(r'^Color\(0x[A-Fa-f0-9]{8}\)$'), // Simple Color constructors
+    ];
+
+    return simplePatterns.any((pattern) => pattern.hasMatch(constantValue.trim()));
+  }
+
+  /// Check if a TextStyle uses complex external functions.
+  bool _isComplexTextStyle(String constantValue) {
+    return constantValue.contains('GoogleFonts.') || 
+           constantValue.contains('_outfitTextStyle') ||
+           constantValue.contains('_') || // Any private method call
+           constantValue.contains('Theme.of(') ||
+           constantValue.contains('context.');
+  }
+
+  /// Convert a complex TextStyle to a simpler equivalent.
+  String? _convertToSimpleTextStyle(String constantValue) {
+    try {
+      // Extract basic properties from GoogleFonts or custom TextStyle calls
+      final Map<String, String> properties = {};
+      
+      // Look for fontSize: pattern
+      final fontSizeMatch = RegExp(r'fontSize:\s*(\d+(?:\.\d+)?)').firstMatch(constantValue);
+      if (fontSizeMatch != null) {
+        properties['fontSize'] = fontSizeMatch.group(1)!;
+      }
+      
+      // Look for fontWeight: pattern
+      final fontWeightMatch = RegExp(r'fontWeight:\s*(FontWeight\.\w+|\w+)').firstMatch(constantValue);
+      if (fontWeightMatch != null) {
+        var weight = fontWeightMatch.group(1)!;
+        // Convert simple references to FontWeight constants
+        if (!weight.startsWith('FontWeight.')) {
+          // Map common weight names to FontWeight constants
+          switch (weight) {
+            case 'regular': weight = 'FontWeight.w400'; break;
+            case 'medium': weight = 'FontWeight.w500'; break;
+            case 'semiBold': weight = 'FontWeight.w600'; break;
+            case 'bold': weight = 'FontWeight.w700'; break;
+            default: weight = 'FontWeight.w400'; break;
+          }
+        }
+        properties['fontWeight'] = weight;
+      }
+      
+      // Look for height: pattern (line height ratio)
+      final heightMatch = RegExp(r'height:\s*(\d+(?:\.\d+)?)').firstMatch(constantValue);
+      if (heightMatch != null) {
+        properties['height'] = heightMatch.group(1)!;
+      }
+      
+      // Look for letterSpacing: pattern
+      final letterSpacingMatch = RegExp(r'letterSpacing:\s*(\d+(?:\.\d+)?)').firstMatch(constantValue);
+      if (letterSpacingMatch != null) {
+        properties['letterSpacing'] = letterSpacingMatch.group(1)!;
+      }
+      
+      // Look for decoration: pattern
+      final decorationMatch = RegExp(r'decoration:\s*(TextDecoration\.\w+)').firstMatch(constantValue);
+      if (decorationMatch != null) {
+        properties['decoration'] = decorationMatch.group(1)!;
+      }
+      
+      // Build a simple TextStyle constructor
+      if (properties.isNotEmpty) {
+        final propertyStrings = properties.entries.map((e) => '${e.key}: ${e.value}').toList();
+        return 'TextStyle(${propertyStrings.join(', ')})';
+      }
+    } catch (e) {
+      _logger.warn('Failed to convert TextStyle: $e');
+    }
+    
+    return null;
+  }
+
+  /// Check if a Color uses complex external functions.
+  bool _isComplexColor(String constantValue) {
+    return constantValue.contains('Color.fromRGBO') ||
+           constantValue.contains('Color.fromARGB') ||
+           constantValue.contains('HSLColor.') ||
+           constantValue.contains('HSVColor.') ||
+           constantValue.contains('Theme.of(') ||
+           constantValue.contains('context.');
+  }
+
+  /// Convert a complex Color to a simpler equivalent.
+  String? _convertToSimpleColor(String constantValue) {
+    try {
+      // Handle Color.fromRGBO(r, g, b, opacity)
+      final rgboMatch = RegExp(r'Color\.fromRGBO\((\d+),\s*(\d+),\s*(\d+),\s*([0-9.]+)\)').firstMatch(constantValue);
+      if (rgboMatch != null) {
+        final r = int.parse(rgboMatch.group(1)!);
+        final g = int.parse(rgboMatch.group(2)!);
+        final b = int.parse(rgboMatch.group(3)!);
+        final opacity = double.parse(rgboMatch.group(4)!);
+        
+        // Convert to hex if opacity is 1.0, otherwise keep RGBA
+        if (opacity == 1.0) {
+          final hex = ((r << 16) | (g << 8) | b).toRadixString(16).padLeft(6, '0').toUpperCase();
+          return 'Color(0xFF$hex)';
+        } else {
+          final alpha = (opacity * 255).round();
+          final hex = ((alpha << 24) | (r << 16) | (g << 8) | b).toRadixString(16).padLeft(8, '0').toUpperCase();
+          return 'Color(0x$hex)';
+        }
+      }
+      
+      // Handle Color.fromARGB(a, r, g, b)
+      final argbMatch = RegExp(r'Color\.fromARGB\((\d+),\s*(\d+),\s*(\d+),\s*(\d+)\)').firstMatch(constantValue);
+      if (argbMatch != null) {
+        final a = int.parse(argbMatch.group(1)!);
+        final r = int.parse(argbMatch.group(2)!);
+        final g = int.parse(argbMatch.group(3)!);
+        final b = int.parse(argbMatch.group(4)!);
+        
+        final hex = ((a << 24) | (r << 16) | (g << 8) | b).toRadixString(16).padLeft(8, '0').toUpperCase();
+        return 'Color(0x$hex)';
+      }
+    } catch (e) {
+      _logger.warn('Failed to convert Color: $e');
+    }
+    
+    return null;
   }
 
   /// Replace foundation constants in a widget file with their actual values.
