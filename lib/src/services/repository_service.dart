@@ -30,8 +30,8 @@ class RepositoryService {
     // Merge configurations (user overrides default)
     final merged = <String, dynamic>{};
     if (defaultConfig['repositories'] is Map) {
-      merged['repositories'] =
-          Map<String, dynamic>.from(defaultConfig['repositories'] as Map);
+      final reposMap = defaultConfig['repositories'] as Map;
+      merged['repositories'] = _convertYamlMapToMap(reposMap);
     } else {
       merged['repositories'] = <String, dynamic>{};
     }
@@ -70,7 +70,7 @@ class RepositoryService {
         final brickPath = parts.sublist(1).join('/');
 
         if (repositories.containsKey(repoName)) {
-          final repoConfig = repositories[repoName] as Map<String, dynamic>;
+          final repoConfig = _convertYamlMapToMap(repositories[repoName] as Map);
           
           // Ensure repository is cloned before searching
           await _ensureRepositoryCloned(repoName, repoConfig);
@@ -94,7 +94,7 @@ class RepositoryService {
       // Search all repositories for the brick name
       for (final entry in repositories.entries) {
         final repoName = entry.key;
-        final repoConfig = entry.value as Map<String, dynamic>;
+        final repoConfig = _convertYamlMapToMap(entry.value as Map);
 
         // Ensure repository is cloned before searching
         await _ensureRepositoryCloned(repoName, repoConfig);
@@ -137,11 +137,25 @@ class RepositoryService {
     Map<String, dynamic> repoConfig,
     String brickPath,
   ) async {
-    final url = repoConfig['url'] as String;
-    
     try {
+      // Always ensure repository is cloned
+      await _ensureRepositoryCloned(repoName, repoConfig);
+      
       // Check if repository is cloned locally
       if (await isRepositoryCloned(repoName)) {
+        final repoPath = getRepositoryPath(repoName);
+        
+        // First, try to find the component directory structure
+        // Look for: lib/src/components/{brickPath}/brick.yaml (with __brick__ subdirectory)
+        final componentPath = path.join(repoPath, 'lib', 'src', 'components', brickPath);
+        final componentBrickYaml = path.join(componentPath, 'brick.yaml');
+        final componentBrickDir = path.join(componentPath, '__brick__');
+        
+        if (await File(componentBrickYaml).exists() && await Directory(componentBrickDir).exists()) {
+          _logger.detail('Found brick at component path: $componentPath');
+          return Brick.path(componentPath);
+        }
+        
         // Get component configuration from fpx.yaml
         final componentConfig = await getComponentConfig(repoName, brickPath);
         
@@ -149,28 +163,32 @@ class RepositoryService {
           // Use fpx.yaml configuration to determine brick path
           final configuredPath = componentConfig['path'] as String?;
           if (configuredPath != null) {
-            final localPath = path.join(getRepositoryPath(repoName), configuredPath);
-            return Brick.path(localPath);
+            final localPath = path.join(repoPath, configuredPath);
+            if (await Directory(localPath).exists()) {
+              _logger.detail('Found brick at configured path: $localPath');
+              return Brick.path(localPath);
+            }
           }
         }
         
         // Fallback: try standard brick location in cloned repo
         final basePath = repoConfig['path'] as String;
         final fullBrickPath = '$basePath/$brickPath';
-        final localPath = path.join(getRepositoryPath(repoName), fullBrickPath);
+        final localPath = path.join(repoPath, fullBrickPath);
         
         if (await Directory(localPath).exists() || await File(path.join(localPath, 'brick.yaml')).exists()) {
+          _logger.detail('Found brick at standard path: $localPath');
           return Brick.path(localPath);
         }
+        
+        _logger.detail('No brick found for $brickPath in repository $repoName');
+        return null;
       }
       
-      // Fallback to Git-based brick (original behavior)
-      final basePath = repoConfig['path'] as String;
-      final fullBrickPath = '$basePath/$brickPath';
-      final gitPath = GitPath(url, path: fullBrickPath);
-      return Brick.git(gitPath);
+      _logger.err('Repository $repoName is not cloned locally');
+      return null;
     } catch (e) {
-      // Brick might not exist in this repository
+      _logger.detail('Error creating brick from repository: $e');
       return null;
     }
   }
@@ -186,7 +204,7 @@ class RepositoryService {
 
     final result = <String, RepositoryInfo>{};
     for (final entry in repositories.entries) {
-      final repoConfig = entry.value as Map<String, dynamic>;
+      final repoConfig = _convertYamlMapToMap(entry.value as Map);
       result[entry.key] = RepositoryInfo(
         name: entry.key,
         url: repoConfig['url'] as String,
@@ -220,7 +238,7 @@ class RepositoryService {
       final content = await defaultConfigFile.readAsString();
       final yamlMap = loadYaml(content);
       if (yamlMap is Map) {
-        return Map<String, dynamic>.from(yamlMap);
+        return _convertYamlMapToMap(yamlMap);
       }
       return <String, dynamic>{};
     } catch (e) {
@@ -239,7 +257,7 @@ class RepositoryService {
       final content = await userConfigFile.readAsString();
       final yamlMap = loadYaml(content);
       if (yamlMap is Map) {
-        return Map<String, dynamic>.from(yamlMap);
+        return _convertYamlMapToMap(yamlMap);
       }
       return <String, dynamic>{};
     } catch (e) {
@@ -343,7 +361,7 @@ class RepositoryService {
       final content = await fpxConfigFile.readAsString();
       final yamlMap = loadYaml(content);
       if (yamlMap is Map) {
-        return Map<String, dynamic>.from(yamlMap);
+        return _convertYamlMapToMap(yamlMap);
       }
     } catch (e) {
       // Handle YAML parsing errors
@@ -446,6 +464,36 @@ class RepositoryService {
     }
 
     return buffer.toString();
+  }
+
+  /// Recursively converts a YamlMap to a Map<String, dynamic>
+  Map<String, dynamic> _convertYamlMapToMap(Map<dynamic, dynamic> yamlMap) {
+    final result = <String, dynamic>{};
+    yamlMap.forEach((key, value) {
+      if (value is Map) {
+        result[key.toString()] = _convertYamlMapToMap(value);
+      } else if (value is List) {
+        result[key.toString()] = _convertYamlListToList(value);
+      } else {
+        result[key.toString()] = value;
+      }
+    });
+    return result;
+  }
+
+  /// Recursively converts a YamlList to a List<dynamic>
+  List<dynamic> _convertYamlListToList(List<dynamic> yamlList) {
+    final result = <dynamic>[];
+    for (final item in yamlList) {
+      if (item is Map) {
+        result.add(_convertYamlMapToMap(item));
+      } else if (item is List) {
+        result.add(_convertYamlListToList(item));
+      } else {
+        result.add(item);
+      }
+    }
+    return result;
   }
 }
 

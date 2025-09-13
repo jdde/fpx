@@ -204,12 +204,42 @@ class AddCommand extends Command<int> {
       final yamlMap = loadYaml(content);
 
       if (yamlMap is Map) {
-        return Map<String, dynamic>.from(yamlMap);
+        return _convertYamlMapToMap(yamlMap);
       }
       return null;
     } catch (e) {
       return null;
     }
+  }
+
+  /// Recursively converts a YamlMap to a Map<String, dynamic>
+  Map<String, dynamic> _convertYamlMapToMap(Map<dynamic, dynamic> yamlMap) {
+    final result = <String, dynamic>{};
+    yamlMap.forEach((key, value) {
+      if (value is Map) {
+        result[key.toString()] = _convertYamlMapToMap(value);
+      } else if (value is List) {
+        result[key.toString()] = _convertYamlListToList(value);
+      } else {
+        result[key.toString()] = value;
+      }
+    });
+    return result;
+  }
+
+  /// Recursively converts a YamlList to a List<dynamic>
+  List<dynamic> _convertYamlListToList(List<dynamic> yamlList) {
+    final result = <dynamic>[];
+    for (final item in yamlList) {
+      if (item is Map) {
+        result.add(_convertYamlMapToMap(item));
+      } else if (item is List) {
+        result.add(_convertYamlListToList(item));
+      } else {
+        result.add(item);
+      }
+    }
+    return result;
   }
 
   Future<void> _ensureMasonYamlExists() async {
