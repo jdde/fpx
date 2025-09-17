@@ -34,6 +34,10 @@ class AddCommand extends Command<int> {
       ..addOption(
         'source',
         help: 'Brick source URL',
+      )
+      ..addOption(
+        'repository',
+        help: 'Specific repository to use (when multiple repositories have the same component)',
       );
   }
 
@@ -60,8 +64,47 @@ class AddCommand extends Command<int> {
     await _ensureMasonYamlExists();
 
     final component = argResults!.rest.first;
+    final specificRepository = argResults!['repository'] as String?;
 
     try {
+      // Search for the component in repositories
+      final searchResults = await _findComponentInRepositories(component, specificRepository);
+      
+      if (searchResults.isEmpty) {
+        final repositories = await _repositoryService.getRepositories();
+        if (repositories.isEmpty) {
+          _logger.err(
+            '❌ Component "$component" not found. No repositories configured.\n'
+            'Add a repository with: fpx repository add --name <name> --url <url>',
+          );
+        } else {
+          final repoList = repositories.keys.join(', ');
+          _logger.err(
+            '❌ Component "$component" not found in configured repositories: $repoList\n'
+            'Try using --repository option to specify a specific repository.',
+          );
+        }
+        return ExitCode.usage.code;
+      }
+
+      // If multiple results and no specific repository chosen, let user select
+      BrickSearchResult selectedResult;
+      if (searchResults.length > 1 && specificRepository == null) {
+        _logger.warn('Multiple components found with name "$component":');
+        for (var i = 0; i < searchResults.length; i++) {
+          final result = searchResults[i];
+          _logger.info('  ${i + 1}. ${result.repositoryName}/${result.fullPath}');
+        }
+        _logger.info('  0. Cancel');
+
+        selectedResult = await _promptUserSelection(searchResults);
+        _logger.info('Using: ${selectedResult.repositoryName}/${selectedResult.fullPath}');
+      } else {
+        selectedResult = searchResults.first;
+        _logger.info(
+            'Using component "${selectedResult.brickName}" from repository "${selectedResult.repositoryName}"');
+      }
+
       // Get target directory
       final targetPath = argResults!['path'] as String;
       final targetDirectory = Directory(path.isAbsolute(targetPath)
@@ -72,12 +115,8 @@ class AddCommand extends Command<int> {
         await targetDirectory.create(recursive: true);
       }
 
-      // Find or create brick
-      final brick =
-          await _findBrick(component, argResults!['source'] as String?);
-
       // Create generator from brick
-      final generator = await MasonGenerator.fromBrick(brick);
+      final generator = await MasonGenerator.fromBrick(selectedResult.brick);
 
       // Create variables map from parsed arguments
       final vars = <String, dynamic>{};
@@ -110,87 +149,94 @@ class AddCommand extends Command<int> {
     }
   }
 
-  Future<Brick> _findBrick(String component, String? source) async {
-    // TODO: use fpx.yaml in repo for search
-    // TODO: remote path cant work, since we need to manipulate the repo first based on fpx configuration
-    // If source is provided, try to use it as a Git URL or path
+  /// Find component in repositories, optionally filtering by specific repository.
+  Future<List<BrickSearchResult>> _findComponentInRepositories(
+    String component,
+    String? specificRepository,
+  ) async {
+    // If source is provided, handle it separately (legacy behavior)
+    final source = argResults!['source'] as String?;
     if (source != null) {
       if (source.startsWith('http') || source.contains('github.com')) {
         // Handle remote Git repository
         _logger.info('Fetching brick from remote source: $source');
-        return Brick.git(GitPath(source));
+        final brick = Brick.git(GitPath(source));
+        return [
+          BrickSearchResult(
+            brickName: component,
+            repositoryName: 'remote',
+            brick: brick,
+            fullPath: component,
+          )
+        ];
       } else if (await Directory(source).exists()) {
         // Handle local path
-        return Brick.path(source);
+        final brick = Brick.path(source);
+        return [
+          BrickSearchResult(
+            brickName: component,
+            repositoryName: 'local',
+            brick: brick,
+            fullPath: component,
+          )
+        ];
       }
     }
 
-    // Search in configured repositories first
-    final searchResults = await _repositoryService.findBrick(component);
-
-    if (searchResults.length == 1) {
-      // Single match found
-      final result = searchResults.first;
-      _logger.info(
-          'Using brick "${result.brickName}" from repository "${result.repositoryName}"');
-      return result.brick;
-    } else if (searchResults.length > 1) {
-      // Multiple matches found, let user choose
-      _logger.warn('Multiple bricks found with name "$component":');
-      for (var i = 0; i < searchResults.length; i++) {
-        final result = searchResults[i];
-        _logger.info('  ${i + 1}. ${result.repositoryName}/${result.fullPath}');
-      }
-      _logger.info('  0. Cancel');
-
-      // Prompt user to select which brick to use
-      final selected = await _promptUserSelection(searchResults);
-      _logger.info('Using: ${selected.repositoryName}/${selected.fullPath}');
-      return selected.brick;
-    }
-
-    // Try to find brick in mason.yaml as fallback
-    final masonYaml = await _loadMasonYaml();
-    if (masonYaml != null) {
-      final bricksNode = masonYaml['bricks'];
-      if (bricksNode is Map && bricksNode.containsKey(component)) {
-        final brickConfig = bricksNode[component];
-
-        // Handle different brick source types
-        if (brickConfig is Map && brickConfig.containsKey('git')) {
-          final gitConfig = brickConfig['git'];
-          if (gitConfig is Map) {
-            final url = gitConfig['url'] as String;
-            final gitPath = gitConfig.containsKey('path')
-                ? GitPath(url, path: gitConfig['path'] as String)
-                : GitPath(url);
-            return Brick.git(gitPath);
-          }
-        } else if (brickConfig is Map && brickConfig.containsKey('path')) {
-          final brickPath = brickConfig['path'] as String;
-          return Brick.path(brickPath);
-        }
-      }
-    }
-
-    // No brick found anywhere
-    final repositories = await _repositoryService.getRepositories();
-    if (repositories.isEmpty) {
-      throw Exception(
-        'Brick "$component" not found. No repositories configured.\n'
-        'Add a repository with: fpx repository add --name <name> --url <url>\n'
-        'Or add the brick to mason.yaml, or use --source option.\n'
-        'Run "fpx init" to create a mason.yaml file.',
-      );
+    // Search in configured repositories
+    List<BrickSearchResult> searchResults;
+    if (specificRepository != null) {
+      // Search only in the specific repository
+      searchResults = await _repositoryService.findBrick('@$specificRepository/$component');
     } else {
-      final repoList = repositories.keys.join(', ');
-      throw Exception(
-        'Brick "$component" not found in configured repositories: $repoList\n'
-        'Try using a specific repository: fpx add @repo/$component\n'
-        'Or add the brick to mason.yaml, or use --source option.\n'
-        'Run "fpx repository list" to see available repositories.',
-      );
+      // Search in all repositories
+      searchResults = await _repositoryService.findBrick(component);
     }
+
+    // Fallback: try to find brick in mason.yaml as before
+    if (searchResults.isEmpty) {
+      final masonBrick = await _findBrickInMasonYaml(component);
+      if (masonBrick != null) {
+        searchResults = [
+          BrickSearchResult(
+            brickName: component,
+            repositoryName: 'mason.yaml',
+            brick: masonBrick,
+            fullPath: component,
+          )
+        ];
+      }
+    }
+
+    return searchResults;
+  }
+
+  /// Find a brick in the existing mason.yaml file.
+  Future<Brick?> _findBrickInMasonYaml(String component) async {
+    final masonYaml = await _loadMasonYaml();
+    if (masonYaml == null) return null;
+
+    final bricksNode = masonYaml['bricks'];
+    if (bricksNode is Map && bricksNode.containsKey(component)) {
+      final brickConfig = bricksNode[component];
+
+      // Handle different brick source types
+      if (brickConfig is Map && brickConfig.containsKey('git')) {
+        final gitConfig = brickConfig['git'];
+        if (gitConfig is Map) {
+          final url = gitConfig['url'] as String;
+          final gitPath = gitConfig.containsKey('path')
+              ? GitPath(url, path: gitConfig['path'] as String)
+              : GitPath(url);
+          return Brick.git(gitPath);
+        }
+      } else if (brickConfig is Map && brickConfig.containsKey('path')) {
+        final brickPath = brickConfig['path'] as String;
+        return Brick.path(brickPath);
+      }
+    }
+
+    return null;
   }
 
   Future<Map<String, dynamic>?> _loadMasonYaml() async {
