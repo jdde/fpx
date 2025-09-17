@@ -96,15 +96,14 @@ bricks:
 ''');
 
       // Try to add a non-existent component
-      try {
-        await commandRunner.run(['add', 'nonexistent_component']);
-      } catch (e) {
-        // Expected to fail
-      }
+      final exitCode = await commandRunner.run(['add', 'nonexistent_component']);
+      
+      // Should return non-zero exit code
+      expect(exitCode, equals(ExitCode.usage.code));
 
-      // Verify error is logged
+      // Verify error is logged with the new message format
       verify(() =>
-              logger.err(any(that: contains('Failed to generate component'))))
+              logger.err(any(that: contains('Component "nonexistent_component" not found. No repositories configured'))))
           .called(1);
     });
 
