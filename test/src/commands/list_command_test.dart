@@ -237,6 +237,87 @@ bricks: [
           .called(1);
     });
 
+    test('shows configured repositories when they exist', () async {
+      // Create mason.yaml with no bricks
+      final masonYamlFile = File('mason.yaml');
+      await masonYamlFile.writeAsString('''
+bricks:
+''');
+
+      // Mock repositories
+      when(() => repositoryService.getRepositories()).thenAnswer((_) async => {
+        'unping-ui': RepositoryInfo(
+          name: 'unping-ui',
+          url: 'https://github.com/unping/unping-ui.git',
+          path: 'bricks',
+        ),
+        'test-repo': RepositoryInfo(
+          name: 'test-repo',
+          url: 'https://github.com/test/repo.git',
+          path: 'components',
+        ),
+      });
+
+      // Run the command
+      final result = await command.run();
+
+      expect(result, equals(ExitCode.success.code));
+
+      // Verify logger calls for repositories
+      verify(() => logger.info('Configured repositories:')).called(1);
+      verify(() => logger.info('  unping-ui: https://github.com/unping/unping-ui.git')).called(1);
+      verify(() => logger.info('  test-repo: https://github.com/test/repo.git')).called(1);
+      verify(() => logger.info('')).called(1);
+      verify(() => logger.info('💡 Use "fpx add <brick-name>" to search all repositories')).called(1);
+      verify(() => logger.info('   Or "fpx add @repo/<brick-name>" for a specific repository')).called(1);
+      
+      // Should not show the "no bricks or repositories" message
+      verifyNever(() => logger.info('📋 No bricks or repositories configured yet'));
+    });
+
+    test('shows both local bricks and repositories when both exist', () async {
+      // Create mason.yaml with bricks
+      final masonYamlFile = File('mason.yaml');
+      await masonYamlFile.writeAsString('''
+bricks:
+  button:
+    git:
+      url: https://github.com/unping/unping-ui.git
+      path: bricks/button
+''');
+
+      // Mock repositories
+      when(() => repositoryService.getRepositories()).thenAnswer((_) async => {
+        'unping-ui': RepositoryInfo(
+          name: 'unping-ui',
+          url: 'https://github.com/unping/unping-ui.git',
+          path: 'bricks',
+        ),
+      });
+
+      // Run the command
+      final result = await command.run();
+
+      expect(result, equals(ExitCode.success.code));
+
+      // Verify logger calls for both local bricks and repositories
+      verify(() => logger.info('Local bricks (mason.yaml):')).called(1);
+      verify(() => logger.info('  button')).called(1);
+      verify(() => logger.info('Configured repositories:')).called(1);
+      verify(() => logger.info('  unping-ui: https://github.com/unping/unping-ui.git')).called(1);
+      verify(() => logger.info('💡 Use "fpx add <brick-name>" to search all repositories')).called(1);
+      verify(() => logger.info('   Or "fpx add @repo/<brick-name>" for a specific repository')).called(1);
+      
+      // Should not show the "no bricks or repositories" message
+      verifyNever(() => logger.info('📋 No bricks or repositories configured yet'));
+    });
+
+    test('can be instantiated without explicit repository service', () {
+      final logger = _MockLogger();
+      final command = ListCommand(logger: logger);
+      expect(command, isNotNull);
+    });
+
     test('has correct name and description', () {
       expect(command.name, equals('list'));
       expect(command.description, equals('List available bricks'));
