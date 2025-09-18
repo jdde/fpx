@@ -31,6 +31,7 @@ class RepositoryCommand extends Command<int> {
     addSubcommand(RepositoryAddCommand(logger: _logger));
     addSubcommand(RepositoryRemoveCommand(logger: _logger));
     addSubcommand(RepositoryListCommand(logger: _logger));
+    addSubcommand(RepositoryUpdateCommand(logger: _logger));
   }
 
   @override
@@ -91,9 +92,33 @@ class RepositoryAddCommand extends Command<int> {
       final parsedRepo = _parseRepositoryUrl(repositoryUrl);
       await _addRepository(repositoryName, parsedRepo.url, parsedRepo.path);
 
-      _logger.success('✅ Successfully added repository "$repositoryName"');
-      _logger.info('   URL: ${parsedRepo.url}');
-      _logger.info('   Path: ${parsedRepo.path}');
+      // Clone the repository locally for processing
+      _logger.info('🔄 Cloning repository "$repositoryName"...');
+      final repositoryService = RepositoryService(logger: _logger);
+      
+      try {
+        await repositoryService.cloneRepository(repositoryName, parsedRepo.url);
+        _logger.info('✅ Repository cloned successfully');
+        
+        // Auto-detect components in the repository
+        final components = await repositoryService.detectComponents(repositoryName);
+        
+        _logger.success('✅ Successfully added repository "$repositoryName"');
+        _logger.info('   URL: ${parsedRepo.url}');
+        _logger.info('   Path: ${parsedRepo.path}');
+        
+        if (components.isNotEmpty) {
+          _logger.info('📦 Detected components: ${components.join(', ')}');
+        } else {
+          _logger.warn('⚠️  No components detected in repository');
+        }
+      } catch (cloneError) {
+        _logger.warn('⚠️  Failed to clone repository: $cloneError');
+        _logger.success('✅ Successfully added repository "$repositoryName" (clone failed)');
+        _logger.info('   URL: ${parsedRepo.url}');
+        _logger.info('   Path: ${parsedRepo.path}');
+        _logger.info('   Note: Repository will be cloned when first accessed');
+      }
 
       return ExitCode.success.code;
     } catch (e) {
@@ -394,6 +419,8 @@ class RepositoryListCommand extends Command<int> {
         return ExitCode.success.code;
       }
 
+      final repositoryService = RepositoryService(logger: _logger);
+      
       _logger.info('Configured repositories:');
       for (final entry in repositories.entries) {
         final repoName = entry.key;
@@ -404,6 +431,25 @@ class RepositoryListCommand extends Command<int> {
         _logger.info('  $repoName:');
         _logger.info('    URL: $url');
         _logger.info('    Path: $path');
+        
+        // Show if repository is cloned locally
+        final isCloned = await repositoryService.isRepositoryCloned(repoName);
+        _logger.info('    Status: ${isCloned ? '✅ Cloned locally' : '❌ Not cloned'}');
+        
+        // Show detected components if repository is cloned
+        if (isCloned) {
+          try {
+            final components = await repositoryService.detectComponents(repoName);
+            if (components.isNotEmpty) {
+              _logger.info('    Components: ${components.join(', ')}');
+            } else {
+              _logger.info('    Components: None detected');
+            }
+          } catch (e) {
+            _logger.info('    Components: Error detecting ($e)');
+          }
+        }
+        _logger.info(''); // Empty line for spacing
       }
 
       return ExitCode.success.code;
@@ -441,4 +487,110 @@ class RepositoryInfo {
 
   final String url;
   final String path;
+}
+
+/// {@template repository_update_command}
+/// A [Command] to update a brick repository.
+/// {@endtemplate}
+class RepositoryUpdateCommand extends Command<int> {
+  /// {@macro repository_update_command}
+  RepositoryUpdateCommand({
+    required Logger logger,
+  }) : _logger = logger {
+    argParser.addOption(
+      'name',
+      abbr: 'n',
+      help: 'Repository name to update (updates all if not specified)',
+      mandatory: false,
+    );
+  }
+
+  @override
+  String get description => 'Update a brick repository';
+
+  @override
+  String get name => 'update';
+
+  @override
+  String get invocation => 'fpx repository update [--name <name>]';
+
+  final Logger _logger;
+
+  @override
+  Future<int> run() async {
+    final repositoryName = argResults!['name'] as String?;
+
+    try {
+      final config = await _loadRepositoryConfig();
+      final repositories = config['repositories'] as Map<String, dynamic>?;
+
+      if (repositories == null || repositories.isEmpty) {
+        _logger.warn('⚠️  No repositories configured');
+        return ExitCode.success.code;
+      }
+
+      final repositoryService = RepositoryService(logger: _logger);
+
+      if (repositoryName != null) {
+        // Update specific repository
+        if (!repositories.containsKey(repositoryName)) {
+          _logger.err('❌ Repository "$repositoryName" not found');
+          return ExitCode.usage.code;
+        }
+
+        await _updateRepository(repositoryService, repositoryName);
+      } else {
+        // Update all repositories
+        for (final repoName in repositories.keys) {
+          await _updateRepository(repositoryService, repoName);
+        }
+      }
+
+      return ExitCode.success.code;
+    } catch (e) {
+      _logger.err('❌ Failed to update repository: $e');
+      return ExitCode.software.code;
+    }
+  }
+
+  Future<void> _updateRepository(RepositoryService repositoryService, String repoName) async {
+    try {
+      _logger.info('🔄 Updating repository "$repoName"...');
+      
+      if (await repositoryService.isRepositoryCloned(repoName)) {
+        await repositoryService.updateRepository(repoName);
+      } else {
+        _logger.warn('⚠️  Repository "$repoName" not cloned locally, skipping update');
+        return;
+      }
+      
+      // Re-detect components after update
+      final components = await repositoryService.detectComponents(repoName);
+      
+      _logger.success('✅ Successfully updated repository "$repoName"');
+      if (components.isNotEmpty) {
+        _logger.info('📦 Detected components: ${components.join(', ')}');
+      }
+    } catch (e) {
+      _logger.err('❌ Failed to update repository "$repoName": $e');
+    }
+  }
+
+  Future<Map<String, dynamic>> _loadRepositoryConfig() async {
+    final configFile = File(RepositoryService.configFileName);
+    if (!await configFile.exists()) {
+      return <String, dynamic>{};
+    }
+
+    try {
+      final content = await configFile.readAsString();
+      final yamlMap = loadYaml(content);
+      if (yamlMap is Map) {
+        return _convertYamlToMap(yamlMap) as Map<String, dynamic>;
+      }
+      return <String, dynamic>{};
+    } catch (e) {
+      return <String, dynamic>{};
+    }
+  }
 }

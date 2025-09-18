@@ -14,3 +14,6 @@ coverage/*
 
 # Android studio and IntelliJ
 .idea
+
+.fpx_repositories
+.fpx_repositories.yaml

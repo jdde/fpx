@@ -14,7 +14,7 @@ class InitCommand extends Command<int> {
     required Logger logger,
     RepositoryService? repositoryService,
   })  : _logger = logger,
-        _repositoryService = repositoryService ?? RepositoryService();
+        _repositoryService = repositoryService ?? RepositoryService(logger: logger);
 
   @override
   String get description => 'Initialize a new mason.yaml file';
