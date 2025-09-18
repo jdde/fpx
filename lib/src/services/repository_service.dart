@@ -72,21 +72,26 @@ class RepositoryService {
         if (repositories.containsKey(repoName)) {
           final repoConfig = _convertYamlMapToMap(repositories[repoName] as Map);
           
-          // Ensure repository is cloned before searching
-          await _ensureRepositoryCloned(repoName, repoConfig);
-          
-          final brick = await _createBrickFromRepository(
-            repoName,
-            repoConfig,
-            brickPath,
-          );
-          if (brick != null) {
-            results.add(BrickSearchResult(
-              brickName: brickPath.split('/').last,
-              repositoryName: repoName,
-              brick: brick,
-              fullPath: brickPath,
-            ));
+          try {
+            // Ensure repository is cloned before searching
+            await _ensureRepositoryCloned(repoName, repoConfig);
+            
+            final brick = await _createBrickFromRepository(
+              repoName,
+              repoConfig,
+              brickPath,
+            );
+            if (brick != null) {
+              results.add(BrickSearchResult(
+                brickName: brickPath.split('/').last,
+                repositoryName: repoName,
+                brick: brick,
+                fullPath: brickPath,
+              ));
+            }
+          } catch (e) {
+            _logger.detail('Failed to access repository $repoName: $e');
+            // Continue without adding results for this repository
           }
         }
       }
@@ -96,26 +101,31 @@ class RepositoryService {
         final repoName = entry.key;
         final repoConfig = _convertYamlMapToMap(entry.value as Map);
 
-        // Ensure repository is cloned before searching
-        await _ensureRepositoryCloned(repoName, repoConfig);
-        
-        // Check if component exists in auto-detected components
-        final detectedComponents = await detectComponents(repoName);
-        if (detectedComponents.contains(brickIdentifier)) {
-          final brick = await _createBrickFromRepository(
-            repoName,
-            repoConfig,
-            brickIdentifier,
-          );
+        try {
+          // Ensure repository is cloned before searching
+          await _ensureRepositoryCloned(repoName, repoConfig);
+          
+          // Check if component exists in auto-detected components
+          final detectedComponents = await detectComponents(repoName);
+          if (detectedComponents.contains(brickIdentifier)) {
+            final brick = await _createBrickFromRepository(
+              repoName,
+              repoConfig,
+              brickIdentifier,
+            );
 
-          if (brick != null) {
-            results.add(BrickSearchResult(
-              brickName: brickIdentifier,
-              repositoryName: repoName,
-              brick: brick,
-              fullPath: brickIdentifier,
-            ));
+            if (brick != null) {
+              results.add(BrickSearchResult(
+                brickName: brickIdentifier,
+                repositoryName: repoName,
+                brick: brick,
+                fullPath: brickIdentifier,
+              ));
+            }
           }
+        } catch (e) {
+          _logger.detail('Failed to access repository $repoName: $e');
+          // Continue searching other repositories
         }
       }
     }
