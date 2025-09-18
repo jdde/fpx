@@ -26,7 +26,7 @@ class FpxCommandRunner extends CompletionCommandRunner<int> {
     RepositoryService? repositoryService,
   })  : _logger = logger ?? Logger(),
         _pubUpdater = pubUpdater ?? PubUpdater(),
-        _repositoryService = repositoryService ?? RepositoryService(),
+        _repositoryService = repositoryService ?? RepositoryService(logger: logger ?? Logger()),
         super(executableName, description) {
     // Add root options and flags
     argParser

@@ -15,7 +15,7 @@ class ListCommand extends Command<int> {
     required Logger logger,
     RepositoryService? repositoryService,
   })  : _logger = logger,
-        _repositoryService = repositoryService ?? RepositoryService();
+        _repositoryService = repositoryService ?? RepositoryService(logger: logger);
 
   @override
   String get description => 'List available bricks';
