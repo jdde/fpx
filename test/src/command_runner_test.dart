@@ -162,7 +162,7 @@ void main() {
           '--name',
           'test_widget',
         ]);
-        expect(result, equals(ExitCode.software.code));
+        expect(result, equals(ExitCode.usage.code));
 
         verify(() => logger.detail('Argument information:')).called(1);
         verify(() => logger.detail('  Top level options:')).called(1);
