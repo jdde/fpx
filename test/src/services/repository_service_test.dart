@@ -4,6 +4,7 @@ import 'package:fpx/src/services/repository_service.dart';
 import 'package:mason/mason.dart';
 import 'package:mason_logger/mason_logger.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:path/path.dart' as path;
 import 'package:test/test.dart';
 
 class _MockLogger extends Mock implements Logger {}
@@ -227,7 +228,8 @@ repositories:
 
     test('getRepositoryPath returns correct path', () {
       final result = service.getRepositoryPath('test-repo');
-      expect(result, equals('.fpx_repositories/test-repo'));
+      final expected = path.join('.fpx_repositories', 'test-repo');
+      expect(result, equals(expected));
     });
 
     test('readFpxConfig returns null for non-existent repository', () async {
