@@ -42,64 +42,19 @@ void main() {
       }
     });
 
-    test('creates mason.yaml when it does not exist', () async {
-      // Ensure mason.yaml doesn't exist
-      final masonYamlFile = File('mason.yaml');
-      if (await masonYamlFile.exists()) {
-        await masonYamlFile.delete();
-      }
-      expect(await masonYamlFile.exists(), isFalse);
-
-      // Run the command
+    test('initializes fpx repositories configuration', () async {
       final result = await command.run();
 
-      // Verify the file was created
-      expect(await masonYamlFile.exists(), isTrue);
       expect(result, equals(ExitCode.success.code));
-
-      // Verify the content
-      final content = await masonYamlFile.readAsString();
-      expect(content, contains('bricks:'));
-      expect(content, contains('# Add your bricks here'));
-
-      // Verify logger calls
-      verify(() =>
-              logger.info('📦 Creating mason.yaml with default settings...'))
-          .called(1);
-      verify(() =>
-              logger.success('✅ Created mason.yaml with default configuration'))
-          .called(1);
-      verify(() => logger.info(
-              '📝 Add your bricks to mason.yaml and run "fpx add <brick-name>"'))
-          .called(1);
-    });
-
-    test('warns when mason.yaml already exists', () async {
-      // Create an existing mason.yaml file
-      final masonYamlFile = File('mason.yaml');
-      await masonYamlFile.writeAsString('existing content');
-
-      // Run the command
-      final result = await command.run();
-
-      // Verify the result
-      expect(result, equals(ExitCode.success.code));
-
-      // Verify the content wasn't changed
-      final content = await masonYamlFile.readAsString();
-      expect(content, equals('existing content'));
-
-      // Verify logger calls
-      verify(() => logger.warn('⚠️  mason.yaml already exists')).called(1);
-      verifyNever(
-          () => logger.info('📦 Creating mason.yaml with default settings...'));
-      verifyNever(() =>
-          logger.success('✅ Created mason.yaml with default configuration'));
+      verify(() => logger.info('� fpx initialized successfully!')).called(1);
+      verify(() => logger.info('� Add repositories with: fpx repository add --url <url>')).called(1);
+      verify(() => logger.info('   Then use: fpx add <component-name> to add components')).called(1);
+      verify(() => logger.info('   Run "fpx repository list" to see available repositories')).called(1);
     });
 
     test('has correct name and description', () {
       expect(command.name, equals('init'));
-      expect(command.description, equals('Initialize a new mason.yaml file'));
+      expect(command.description, equals('Initialize fpx repositories configuration'));
     });
   });
 }
