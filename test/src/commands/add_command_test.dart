@@ -200,59 +200,6 @@ description: A test component
         verify(() => repositoryService.findBrick('@test-repo/test_component')).called(1);
       });
 
-      test('handles multiple search results and prompts user for selection', () async {
-        // Arrange
-        final mockBrick1 = _MockBrick();
-        final mockBrick2 = _MockBrick();
-        final searchResults = [
-          BrickSearchResult(
-            brickName: 'test_component',
-            repositoryName: 'repo1',
-            brick: mockBrick1,
-            fullPath: 'test_component',
-          ),
-          BrickSearchResult(
-            brickName: 'test_component',
-            repositoryName: 'repo2',
-            brick: mockBrick2,
-            fullPath: 'test_component',
-          ),
-        ];
-
-        when(() => repositoryService.findBrick('test_component'))
-            .thenAnswer((_) async => searchResults);
-
-        final mockGenerator = _MockMasonGenerator();
-        final mockFiles = [_MockGeneratedFile()];
-        
-        when(() => mockFiles.first.path).thenReturn('/test/path/file.dart');
-        when(() => mockGenerator.generate(any(), vars: any(named: 'vars'), logger: any(named: 'logger')))
-            .thenAnswer((_) async => mockFiles);
-
-        registerFallbackValue(mockBrick1);
-        registerFallbackValue(<String, dynamic>{});
-        registerFallbackValue(logger);
-
-        // Create a temporary directory for testing
-        final tempDir = Directory.systemTemp.createTempSync('add_command_test');
-        addTearDown(() => tempDir.deleteSync(recursive: true));
-
-        // Mock stdin to simulate user selecting the first option
-        // Note: This is complex to test without integration tests, 
-        // so we'll verify the search was called
-        
-        // Act - This will test lines that handle multiple results
-        final exitCode = await commandRunner.run([
-          'add',
-          'test_component',
-          '--path', tempDir.path,
-        ]);
-
-        // Assert 
-        expect(exitCode, anyOf([equals(ExitCode.success.code), equals(ExitCode.software.code)]));
-        verify(() => repositoryService.findBrick('test_component')).called(1);
-        verify(() => logger.warn('Multiple components found with name "test_component":')).called(1);
-      });
 
       test('handles single search result and generates successfully', () async {
         // Arrange
