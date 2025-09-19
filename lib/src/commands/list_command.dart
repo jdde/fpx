@@ -61,7 +61,6 @@ class ListCommand extends Command<int> {
       _logger.info('📋 No repositories configured yet');
       _logger.info('💡 Add repositories with:');
       _logger.info('   fpx repository add --name <name> --url <url>');
-      _logger.info('   fpx init  # to create default repositories');
     } else if (allComponents.isEmpty) {
       _logger.info('📋 No components found in configured repositories');
       _logger.info('💡 Make sure your repositories contain valid fpx.yaml files');

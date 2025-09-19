@@ -101,7 +101,6 @@ void main() {
       verify(() => logger.info('📋 No repositories configured yet')).called(1);
       verify(() => logger.info('💡 Add repositories with:')).called(1);
       verify(() => logger.info('   fpx repository add --name <name> --url <url>')).called(1);
-      verify(() => logger.info('   fpx init  # to create default repositories')).called(1);
     });
 
     test('shows message when repositories exist but no components found', () async {

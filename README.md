@@ -56,9 +56,6 @@ That's it! FPX automatically creates the necessary configuration files and you n
 # Add a component (requires mason.yaml configuration)
 $ fpx add button --name my_button
 
-# Initialize mason.yaml file
-$ fpx init
-
 # List available bricks
 $ fpx list
 
