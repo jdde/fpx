@@ -46,7 +46,7 @@ void main() {
       final result = await command.run();
 
       expect(result, equals(ExitCode.success.code));
-      verify(() => logger.info('� fpx initialized successfully!')).called(1);
+      verify(() => logger.info('🚀 fpx initialized successfully!')).called(1);
       verify(() => logger.info('� Add repositories with: fpx repository add --url <url>')).called(1);
       verify(() => logger.info('   Then use: fpx add <component-name> to add components')).called(1);
       verify(() => logger.info('   Run "fpx repository list" to see available repositories')).called(1);

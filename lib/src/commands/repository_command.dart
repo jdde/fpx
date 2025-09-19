@@ -27,8 +27,9 @@ class RepositoryCommand extends Command<int> {
   /// {@macro repository_command}
   RepositoryCommand({
     required Logger logger,
+    RepositoryService? repositoryService,
   }) : _logger = logger {
-    addSubcommand(RepositoryAddCommand(logger: _logger));
+    addSubcommand(RepositoryAddCommand(logger: _logger, repositoryService: repositoryService));
     addSubcommand(RepositoryRemoveCommand(logger: _logger));
     addSubcommand(RepositoryListCommand(logger: _logger));
     addSubcommand(RepositoryUpdateCommand(logger: _logger));
@@ -53,7 +54,9 @@ class RepositoryAddCommand extends Command<int> {
   /// {@macro repository_add_command}
   RepositoryAddCommand({
     required Logger logger,
-  }) : _logger = logger {
+    RepositoryService? repositoryService,
+  }) : _logger = logger,
+        _repositoryService = repositoryService {
     argParser
       ..addOption(
         'name',
@@ -79,6 +82,7 @@ class RepositoryAddCommand extends Command<int> {
   String get invocation => 'fpx repository add [--name <name>] --url <url>';
 
   final Logger _logger;
+  final RepositoryService? _repositoryService;
 
   @override
   Future<int> run() async {
@@ -93,7 +97,7 @@ class RepositoryAddCommand extends Command<int> {
 
       // Clone the repository locally for processing
       _logger.info('🔄 Cloning repository "$repositoryName"...');
-      final repositoryService = RepositoryService(logger: _logger);
+      final repositoryService = _repositoryService ?? RepositoryService(logger: _logger);
       
       try {
         await repositoryService.cloneRepository(repositoryName, parsedRepo.url);
@@ -152,7 +156,12 @@ class RepositoryAddCommand extends Command<int> {
 
       if (pathSegments.length >= 2) {
         final owner = pathSegments[0];
-        final repo = pathSegments[1];
+        var repo = pathSegments[1];
+        
+        // Remove .git suffix if it exists to avoid duplication
+        if (repo.endsWith('.git')) {
+          repo = repo.substring(0, repo.length - 4);
+        }
 
         // Base repository URL
         final baseUrl = 'https://github.com/$owner/$repo.git';

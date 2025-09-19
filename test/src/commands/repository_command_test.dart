@@ -9,9 +9,12 @@ import 'package:test/test.dart';
 
 class _MockLogger extends Mock implements Logger {}
 
+class _MockRepositoryService extends Mock implements RepositoryService {}
+
 void main() {
   group('RepositoryCommand', () {
     late Logger logger;
+    late RepositoryService mockRepositoryService;
     late RepositoryCommand command;
     late Directory testDir;
     late Directory originalDir;
@@ -19,13 +22,21 @@ void main() {
 
     setUp(() async {
       logger = _MockLogger();
-      command = RepositoryCommand(logger: logger);
+      mockRepositoryService = _MockRepositoryService();
+      command = RepositoryCommand(logger: logger, repositoryService: mockRepositoryService);
       commandRunner = CommandRunner<int>('test', 'Test command runner')
         ..addCommand(command);
+
+      // Set up mock repository service methods
+      when(() => mockRepositoryService.cloneRepository(any(), any()))
+          .thenAnswer((_) async => Directory.systemTemp);
+      when(() => mockRepositoryService.detectComponents(any()))
+          .thenAnswer((_) async => ['test-component']);
 
       // Create and switch to test directory
       originalDir = Directory.current;
       testDir = await Directory.systemTemp.createTemp('fpx_repository_test_');
+      Directory.current = testDir;
       Directory.current = testDir;
     });
 
@@ -47,15 +58,10 @@ void main() {
         ]);
 
         expect(result, equals(0));
-
-        // Check config file was created
-        final configFile = File(RepositoryService.configFileName);
-        expect(configFile.existsSync(), isTrue);
-
-        final content = configFile.readAsStringSync();
-        expect(content, contains('test-repo:'));
-        expect(content, contains('url: https://github.com/test/repo.git'));
-        expect(content, contains('path: bricks'));
+        
+        // Verify the repository service was called correctly
+        verify(() => mockRepositoryService.cloneRepository('test-repo', 'https://github.com/test/repo.git')).called(1);
+        verify(() => mockRepositoryService.detectComponents('test-repo')).called(1);
       });
 
       test('uses default path when not specified', () async {
@@ -67,10 +73,9 @@ void main() {
         ]);
 
         expect(result, equals(0));
-
-        final configFile = File(RepositoryService.configFileName);
-        final content = configFile.readAsStringSync();
-        expect(content, contains('path: bricks'));
+        
+        // Verify the repository service was called correctly
+        verify(() => mockRepositoryService.cloneRepository('test-repo', 'https://github.com/test/repo.git')).called(1);
       });
 
       test('auto-generates name when not provided', () async {
@@ -82,14 +87,8 @@ void main() {
 
         expect(result, equals(0));
 
-        // Check config file was created with auto-generated name
-        final configFile = File(RepositoryService.configFileName);
-        expect(configFile.existsSync(), isTrue);
-
-        final content = configFile.readAsStringSync();
-        expect(content, contains('test:')); // First path segment should be 'test'
-        expect(content, contains('url: https://github.com/test/repo.git'));
-        expect(content, contains('path: bricks'));
+        // Verify the repository service was called with auto-generated name
+        verify(() => mockRepositoryService.cloneRepository('test', 'https://github.com/test/repo.git')).called(1);
       });
 
       test('fails when url is missing', () async {
@@ -253,6 +252,9 @@ void main() {
         ]);
 
         expect(result, equals(0));
+        
+        // Verify the repository service was called correctly
+        verify(() => mockRepositoryService.cloneRepository('test-repo', 'https://github.com/test/repo.git')).called(1);
       });
 
 

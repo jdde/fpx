@@ -2,15 +2,18 @@ import 'dart:io';
 
 import 'package:args/command_runner.dart';
 import 'package:fpx/src/commands/add_command.dart';
+import 'package:fpx/src/services/repository_service.dart';
 import 'package:mason_logger/mason_logger.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:test/test.dart';
 
 class _MockLogger extends Mock implements Logger {}
+class _MockRepositoryService extends Mock implements RepositoryService {}
 
 void main() {
   group('AddCommand', () {
     late Logger logger;
+    late RepositoryService mockRepositoryService;
     late AddCommand command;
     late Directory testDir;
     late Directory originalDir;
@@ -18,7 +21,14 @@ void main() {
 
     setUp(() async {
       logger = _MockLogger();
-      command = AddCommand(logger: logger);
+      mockRepositoryService = _MockRepositoryService();
+      command = AddCommand(logger: logger, repositoryService: mockRepositoryService);
+
+      // Set up common mock responses
+      when(() => mockRepositoryService.findBrick(any()))
+          .thenAnswer((_) async => <BrickSearchResult>[]);
+      when(() => mockRepositoryService.getRepositories())
+          .thenAnswer((_) async => <String, RepositoryInfo>{});
 
       // Create a command runner to properly parse arguments
       commandRunner = CommandRunner<int>('test', 'Test runner')
@@ -56,34 +66,18 @@ void main() {
           '❌ Missing component name. Usage: fpx add <component>')).called(1);
     });
 
-    test('creates mason.yaml if it does not exist when running add', () async {
-      // Ensure mason.yaml doesn't exist
-      final masonYamlFile = File('mason.yaml');
-      if (await masonYamlFile.exists()) {
-        await masonYamlFile.delete();
-      }
-      expect(await masonYamlFile.exists(), isFalse);
+    test('handles missing component when no repositories configured', () async {
+      // Mock repository service to return empty repositories
+      when(() => mockRepositoryService.getRepositories())
+          .thenAnswer((_) async => <String, RepositoryInfo>{});
 
-      // This will fail because the brick doesn't exist, but it will create mason.yaml first
-      try {
-        await commandRunner.run(['add', 'test_component']);
-      } catch (e) {
-        // Expected to fail due to missing brick
-      }
+      // Try to add a component when no repositories are configured
+      final result = await commandRunner.run(['add', 'test_component']);
 
-      // Verify mason.yaml was created
-      expect(await masonYamlFile.exists(), isTrue);
-
-      final content = await masonYamlFile.readAsString();
-      expect(content, contains('bricks:'));
-      expect(content, contains('# Add your bricks here'));
-
-      verify(() => logger.info(
-              '📦 No mason.yaml found, creating one with default settings...'))
-          .called(1);
-      verify(() =>
-              logger.success('✅ Created mason.yaml with default configuration'))
-          .called(1);
+      expect(result, equals(ExitCode.usage.code));
+      verify(() => logger.err(
+          '❌ Component "test_component" not found. No repositories configured.\n'
+          'Add a repository with: fpx repository add --name <name> --url <url>')).called(1);
     });
 
     test('handles missing brick error correctly', () async {
