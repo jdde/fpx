@@ -218,7 +218,7 @@ class AddCommand extends Command<int> {
       List<BrickSearchResult> searchResults) async {
     while (true) {
       stdout.write(
-          '\nPlease select a brick (1-${searchResults.length}, or 0 to cancel): ');
+          '\nPlease select a component (1-${searchResults.length}, or 0 to cancel): ');
       final input = stdin.readLineSync();
 
       if (input == null || input.trim().isEmpty) {
@@ -234,7 +234,7 @@ class AddCommand extends Command<int> {
 
       if (selection == 0) {
         _logger.info('Operation cancelled.');
-        throw Exception('User cancelled brick selection');
+        throw Exception('User cancelled component selection');
       }
 
       if (selection < 1 || selection > searchResults.length) {
