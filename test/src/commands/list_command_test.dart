@@ -33,6 +33,13 @@ void main() {
       expect(command.description, equals('List available bricks'));
     });
 
+    test('can be instantiated without providing repository service', () {
+      // Test the default constructor path where RepositoryService is created internally
+      final commandWithDefaults = ListCommand(logger: logger);
+      expect(commandWithDefaults.name, equals('list'));
+      expect(commandWithDefaults.description, equals('List available bricks'));
+    });
+
     test('lists configured repositories and components', () async {
       // Arrange
       const repo1 = RepositoryInfo(
