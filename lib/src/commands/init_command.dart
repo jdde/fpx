@@ -27,8 +27,6 @@ class InitCommand extends Command<int> {
   Future<int> run() async {
     await _repositoryService.initializeDefaultRepositories();
     _logger.info(
-        '📝 Add your bricks to mason.yaml and run "fpx add <brick-name>"');
-    _logger.info(
         '💡 Or use "fpx add <brick-name>" to search configured repositories');
     _logger.info('   Run "fpx repository list" to see available repositories');
     return ExitCode.success.code;
