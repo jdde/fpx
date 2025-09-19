@@ -22,27 +22,64 @@ class RepositoryService {
   late final RepositoryPostCloneService _postCloneService = 
       RepositoryPostCloneService(logger: _logger);
 
-  /// Load repository configuration from file.
+  /// Load repository configuration from the actual cloned repositories.
   Future<Map<String, dynamic>> loadRepositoryConfig() async {
-    final defaultConfig = await _loadDefaultRepositoryConfig();
-    final userConfig = await _loadUserRepositoryConfig();
-
-    // Merge configurations (user overrides default)
-    final merged = <String, dynamic>{};
-    if (defaultConfig['repositories'] is Map) {
-      final reposMap = defaultConfig['repositories'] as Map;
-      merged['repositories'] = _convertYamlMapToMap(reposMap);
-    } else {
-      merged['repositories'] = <String, dynamic>{};
+    final repositoriesDir = Directory(_repositoriesDir);
+    if (!await repositoriesDir.exists()) {
+      return {'repositories': <String, dynamic>{}};
     }
 
-    if (userConfig['repositories'] is Map) {
-      final userRepos = userConfig['repositories'] as Map<String, dynamic>;
-      final mergedRepos = merged['repositories'] as Map<String, dynamic>;
-      mergedRepos.addAll(userRepos);
+    final repositories = <String, dynamic>{};
+    
+    // Scan the .fpx_repositories directory for cloned repositories
+    await for (final entity in repositoriesDir.list()) {
+      if (entity is Directory) {
+        final repoName = path.basename(entity.path);
+        
+        // Try to get repository URL and path from git remote and fpx.yaml
+        String? repoUrl;
+        String? repoPath;
+        
+        try {
+          final result = await Process.run(
+            'git',
+            ['remote', 'get-url', 'origin'],
+            workingDirectory: entity.path,
+          );
+          if (result.exitCode == 0) {
+            repoUrl = result.stdout.toString().trim();
+          }
+        } catch (e) {
+          // If we can't get git remote, that's okay, we'll use a default
+        }
+        
+        // Read the path from fpx.yaml
+        try {
+          final fpxConfig = await readFpxConfig(repoName);
+          if (fpxConfig != null && fpxConfig['bricks'] is Map) {
+            final bricksConfig = fpxConfig['bricks'] as Map;
+            repoPath = bricksConfig['path'] as String?;
+          }
+        } catch (e) {
+          // If we can't read fpx.yaml, we'll skip this repository
+          _logger.detail('Failed to read fpx.yaml for repository $repoName: $e');
+          continue;
+        }
+        
+        // Skip repositories that don't have a valid bricks path configured
+        if (repoPath == null) {
+          _logger.detail('Repository $repoName does not have a valid bricks.path in fpx.yaml, skipping');
+          continue;
+        }
+        
+        repositories[repoName] = {
+          'url': repoUrl ?? 'unknown',
+          'path': repoPath,
+        };
+      }
     }
 
-    return merged;
+    return {'repositories': repositories};
   }
 
   /// Find a brick by name, optionally with repository namespace.
@@ -227,71 +264,7 @@ class RepositoryService {
 
   /// Initialize default repositories.
   Future<void> initializeDefaultRepositories() async {
-    final config = await loadRepositoryConfig();
-
-    // Add default repository if none exist
-    if (config['repositories'] == null ||
-        (config['repositories'] as Map).isEmpty) {
-      // Default repositories will be loaded from .fpx_repositories.yaml
-      // No need to create them programmatically
-    }
-  }
-
-  /// Load default repository configuration.
-  Future<Map<String, dynamic>> _loadDefaultRepositoryConfig() async {
-    final defaultConfigFile = File(configFileName);
-    if (!await defaultConfigFile.exists()) {
-      return <String, dynamic>{};
-    }
-
-    try {
-      final content = await defaultConfigFile.readAsString();
-      final yamlMap = loadYaml(content);
-      if (yamlMap is Map) {
-        return _convertYamlMapToMap(yamlMap);
-      }
-      return <String, dynamic>{};
-    } catch (e) {
-      return <String, dynamic>{}; // coverage:ignore-line
-    }
-  }
-
-  /// Load user-specific repository configuration.
-  Future<Map<String, dynamic>> _loadUserRepositoryConfig() async {
-    final userConfigFile = File(_userConfigFileName);
-    if (!await userConfigFile.exists()) {
-      return <String, dynamic>{};
-    }
-
-    try {
-      final content = await userConfigFile.readAsString();
-      final yamlMap = loadYaml(content);
-      if (yamlMap is Map) {
-        return _convertYamlMapToMap(yamlMap);
-      }
-      return <String, dynamic>{};
-    } catch (e) {
-      return <String, dynamic>{}; // coverage:ignore-line
-    }
-  }
-
-  /// Save repository configuration to file.
-  Future<void> saveRepositoryConfig(Map<String, dynamic> config) async {
-    final configFile = File(configFileName);
-
-    const header = '''# fpx repository configuration
-# This file manages remote repositories for Mason bricks
-# 
-# Format:
-# repositories:
-#   <name>:
-#     url: <git_url>
-#     path: <path_to_bricks_in_repo>
-
-''';
-
-    final yamlContent = _mapToYaml(config);
-    await configFile.writeAsString(header + yamlContent);
+    // No longer needed since we load from actual cloned directories
   }
 
   /// Clone a repository locally for processing.
@@ -305,6 +278,9 @@ class RepositoryService {
     
     // Create repositories directory
     await Directory(_repositoriesDir).create(recursive: true);
+    
+    // Ensure .fpx_repositories is in .gitignore
+    await _ensureGitignoreEntry();
     
     // Clone the repository
     final result = await Process.run( // coverage:ignore-line
@@ -324,7 +300,66 @@ class RepositoryService {
       repositoryUrl: url,
     );
     
+    // Validate that the repository has a valid fpx.yaml with bricks.path
+    await _validateRepositoryStructure(name);
+    
     return repoDir;
+  }
+
+  /// Validate that a cloned repository has the required fpx.yaml structure
+  Future<void> _validateRepositoryStructure(String repositoryName) async {
+    final fpxConfig = await readFpxConfig(repositoryName);
+    
+    if (fpxConfig == null) {
+      throw Exception(
+        'Repository "$repositoryName" does not contain fpx.yaml. '
+        'This file is required to define the bricks configuration.',
+      );
+    }
+    
+    final bricksConfig = fpxConfig['bricks'];
+    if (bricksConfig is! Map) {
+      throw Exception(
+        'Repository "$repositoryName" fpx.yaml does not contain a "bricks" section. '
+        'This section is required to define repository configuration.',
+      );
+    }
+    
+    final bricksPath = bricksConfig['path'] as String?;
+    if (bricksPath == null || bricksPath.isEmpty) {
+      throw Exception(
+        'Repository "$repositoryName" fpx.yaml does not specify "bricks.path". '
+        'This field is required to define where components are located.',
+      );
+    }
+    
+    // Verify the bricks path actually exists in the repository
+    final repoPath = getRepositoryPath(repositoryName);
+    final bricksDir = Directory(path.join(repoPath, bricksPath));
+    if (!await bricksDir.exists()) {
+      throw Exception(
+        'Repository "$repositoryName" specifies bricks.path "$bricksPath" '
+        'but this directory does not exist in the repository.',
+      );
+    }
+    
+    _logger.detail('✅ Repository "$repositoryName" validation successful. Bricks path: $bricksPath');
+  }
+
+  /// Ensure .fpx_repositories is added to .gitignore
+  Future<void> _ensureGitignoreEntry() async {
+    final gitignoreFile = File('.gitignore');
+    
+    if (await gitignoreFile.exists()) {
+      final content = await gitignoreFile.readAsString();
+      if (!content.contains('.fpx_repositories')) {
+        await gitignoreFile.writeAsString('$content\n# fpx repositories\n.fpx_repositories/\n');
+        _logger.detail('Added .fpx_repositories/ to .gitignore');
+      }
+    } else {
+      await gitignoreFile.writeAsString('# fpx repositories\n.fpx_repositories/\n');
+      _logger.detail('Created .gitignore with .fpx_repositories/');
+    }
   }
 
   /// Update an existing cloned repository.
@@ -399,7 +434,24 @@ class RepositoryService {
     // Also check for a 'bricks' section for backward compatibility
     final bricksConfig = fpxConfig['bricks'];
     if (bricksConfig is Map) {
-      components.addAll(bricksConfig.keys.cast<String>());
+      // Check if bricks contains component definitions or just configuration
+      bool hasComponentDefinitions = false;
+      for (final key in bricksConfig.keys) {
+        if (key != 'path' && key != 'variables') {
+          components.add(key as String);
+          hasComponentDefinitions = true;
+        }
+      }
+      
+      // If bricks section only contains configuration (like 'path'), scan for actual components
+      if (!hasComponentDefinitions && components.isEmpty) {
+        return await _scanForBricks(repositoryName);
+      }
+    }
+    
+    // If no components found in fpx.yaml, fall back to scanning
+    if (components.isEmpty) {
+      return await _scanForBricks(repositoryName);
     }
     
     return components;
@@ -457,23 +509,6 @@ class RepositoryService {
     }
     
     return null;
-  }
-
-  String _mapToYaml(Map<String, dynamic> map, [int indent = 0]) {
-    final buffer = StringBuffer();
-    final spaces = '  ' * indent;
-
-    for (final entry in map.entries) {
-      if (entry.value is Map) {
-        buffer.writeln('${spaces}${entry.key}:');
-        buffer
-            .write(_mapToYaml(entry.value as Map<String, dynamic>, indent + 1));
-      } else {
-        buffer.writeln('${spaces}${entry.key}: ${entry.value}');
-      }
-    }
-
-    return buffer.toString();
   }
 
   /// Recursively converts a YamlMap to a Map<String, dynamic>

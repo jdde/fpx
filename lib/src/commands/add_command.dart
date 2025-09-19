@@ -3,7 +3,6 @@ import 'dart:io';
 import 'package:args/command_runner.dart';
 import 'package:mason/mason.dart';
 import 'package:path/path.dart' as path;
-import 'package:yaml/yaml.dart';
 
 import '../services/repository_service.dart';
 
@@ -59,9 +58,6 @@ class AddCommand extends Command<int> {
       _logger.err('❌ Missing component name. Usage: fpx add <component>');
       return ExitCode.usage.code;
     }
-
-    // Auto-initialize if mason.yaml doesn't exist
-    await _ensureMasonYamlExists();
 
     final component = argResults!.rest.first;
     final specificRepository = argResults!['repository'] as String?;
@@ -193,124 +189,7 @@ class AddCommand extends Command<int> {
       searchResults = await _repositoryService.findBrick(component);
     }
 
-    // Fallback: try to find brick in mason.yaml as before
-    if (searchResults.isEmpty) {
-      final masonBrick = await _findBrickInMasonYaml(component);
-      if (masonBrick != null) {
-        searchResults = [
-          BrickSearchResult(
-            brickName: component,
-            repositoryName: 'mason.yaml',
-            brick: masonBrick,
-            fullPath: component,
-          )
-        ];
-      }
-    }
-
     return searchResults;
-  }
-
-  /// Find a brick in the existing mason.yaml file.
-  Future<Brick?> _findBrickInMasonYaml(String component) async {
-    final masonYaml = await _loadMasonYaml();
-    if (masonYaml == null) return null;
-
-    final bricksNode = masonYaml['bricks'];
-    if (bricksNode is Map && bricksNode.containsKey(component)) {
-      final brickConfig = bricksNode[component];
-
-      // Handle different brick source types
-      if (brickConfig is Map && brickConfig.containsKey('git')) {
-        final gitConfig = brickConfig['git'];
-        if (gitConfig is Map) {
-          final url = gitConfig['url'] as String;
-          final gitPath = gitConfig.containsKey('path')
-              ? GitPath(url, path: gitConfig['path'] as String)
-              : GitPath(url);
-          return Brick.git(gitPath);
-        }
-      } else if (brickConfig is Map && brickConfig.containsKey('path')) {
-        final brickPath = brickConfig['path'] as String;
-        return Brick.path(brickPath);
-      }
-    }
-
-    return null;
-  }
-
-  Future<Map<String, dynamic>?> _loadMasonYaml() async {
-    final masonYamlFile = File('mason.yaml');
-    if (!await masonYamlFile.exists()) {
-      return null;
-    }
-
-    try {
-      final content = await masonYamlFile.readAsString();
-      final yamlMap = loadYaml(content);
-
-      if (yamlMap is Map) {
-        return _convertYamlMapToMap(yamlMap);
-      }
-      return null;
-    } catch (e) {
-      return null;
-    }
-  }
-
-  /// Recursively converts a YamlMap to a Map<String, dynamic>
-  Map<String, dynamic> _convertYamlMapToMap(Map<dynamic, dynamic> yamlMap) {
-    final result = <String, dynamic>{};
-    yamlMap.forEach((key, value) {
-      if (value is Map) {
-        result[key.toString()] = _convertYamlMapToMap(value);
-      } else if (value is List) {
-        result[key.toString()] = _convertYamlListToList(value);
-      } else {
-        result[key.toString()] = value;
-      }
-    });
-    return result;
-  }
-
-  /// Recursively converts a YamlList to a List<dynamic>
-  List<dynamic> _convertYamlListToList(List<dynamic> yamlList) {
-    final result = <dynamic>[];
-    for (final item in yamlList) {
-      if (item is Map) {
-        result.add(_convertYamlMapToMap(item));
-      } else if (item is List) {
-        result.add(_convertYamlListToList(item));
-      } else {
-        result.add(item);
-      }
-    }
-    return result;
-  }
-
-  Future<void> _ensureMasonYamlExists() async {
-    final masonYamlFile = File('mason.yaml');
-
-    if (!await masonYamlFile.exists()) {
-      _logger.info(
-          '📦 No mason.yaml found, creating one with default settings...');
-
-      const defaultMasonYaml = '''
-bricks:
-  # Add your bricks here
-  # Example:
-  # button:
-  #   git:
-  #     url: https://github.com/unping/unping-ui.git
-  #     path: bricks/button
-  # 
-  # widget:
-  #   path: ./bricks/widget
-''';
-
-      await masonYamlFile.writeAsString(defaultMasonYaml);
-      _logger.success('✅ Created mason.yaml with default configuration');
-    }
   }
 
   Future<void> _promptForMissingVars(

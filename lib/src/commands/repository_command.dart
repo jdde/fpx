@@ -90,7 +90,6 @@ class RepositoryAddCommand extends Command<int> {
 
     try {
       final parsedRepo = _parseRepositoryUrl(repositoryUrl);
-      await _addRepository(repositoryName, parsedRepo.url, parsedRepo.path);
 
       // Clone the repository locally for processing
       _logger.info('🔄 Cloning repository "$repositoryName"...');
@@ -113,11 +112,8 @@ class RepositoryAddCommand extends Command<int> {
           _logger.warn('⚠️  No components detected in repository');
         }
       } catch (cloneError) {
-        _logger.warn('⚠️  Failed to clone repository: $cloneError');
-        _logger.success('✅ Successfully added repository "$repositoryName" (clone failed)');
-        _logger.info('   URL: ${parsedRepo.url}');
-        _logger.info('   Path: ${parsedRepo.path}');
-        _logger.info('   Note: Repository will be cloned when first accessed');
+        _logger.err('❌ Failed to clone repository: $cloneError');
+        return ExitCode.software.code;
       }
 
       return ExitCode.success.code;
@@ -197,72 +193,6 @@ class RepositoryAddCommand extends Command<int> {
     return RepositoryInfo(url: url, path: 'bricks');
   }
 
-  Future<void> _addRepository(String name, String url, String path) async {
-    final config = await _loadRepositoryConfig();
-
-    config['repositories'] ??= <String, dynamic>{};
-    final repositories = config['repositories'] as Map<String, dynamic>;
-
-    repositories[name] = {
-      'url': url,
-      'path': path,
-    };
-
-    await _saveRepositoryConfig(config);
-  }
-
-  Future<Map<String, dynamic>> _loadRepositoryConfig() async {
-    final configFile = File(RepositoryService.configFileName);
-    if (!await configFile.exists()) {
-      return <String, dynamic>{};
-    }
-
-    try {
-      final content = await configFile.readAsString();
-      final yamlMap = loadYaml(content);
-      if (yamlMap is Map) {
-        return _convertYamlToMap(yamlMap) as Map<String, dynamic>;
-      }
-      return <String, dynamic>{};
-    } catch (e) {
-      return <String, dynamic>{};
-    }
-  }
-
-  Future<void> _saveRepositoryConfig(Map<String, dynamic> config) async {
-    final configFile = File(RepositoryService.configFileName);
-
-    const header = '''# fpx repository configuration
-# This file manages remote repositories for Mason bricks
-# 
-# Format:
-# repositories:
-#   <name>:
-#     url: <git_url>
-#     path: <path_to_bricks_in_repo>
-
-''';
-
-    final yamlContent = _mapToYaml(config);
-    await configFile.writeAsString(header + yamlContent);
-  }
-
-  String _mapToYaml(Map<String, dynamic> map, [int indent = 0]) {
-    final buffer = StringBuffer();
-    final spaces = '  ' * indent;
-
-    for (final entry in map.entries) {
-      if (entry.value is Map) {
-        buffer.writeln('${spaces}${entry.key}:');
-        buffer
-            .write(_mapToYaml(entry.value as Map<String, dynamic>, indent + 1));
-      } else {
-        buffer.writeln('${spaces}${entry.key}: ${entry.value}');
-      }
-    }
-
-    return buffer.toString();
-  }
 }
 
 /// {@template repository_remove_command}
@@ -300,7 +230,8 @@ class RepositoryRemoveCommand extends Command<int> {
     final repositoryName = argResults!['name'] as String;
 
     try {
-      final removed = await _removeRepository(repositoryName);
+      final repositoryService = RepositoryService(logger: _logger);
+      final removed = await _removeRepository(repositoryName, repositoryService);
       if (removed) {
         _logger.success('✅ Successfully removed repository "$repositoryName"');
       } else {
@@ -313,70 +244,19 @@ class RepositoryRemoveCommand extends Command<int> {
     }
   }
 
-  Future<bool> _removeRepository(String name) async {
-    final config = await _loadRepositoryConfig();
-    final repositories = config['repositories'] as Map<String, dynamic>?;
-
-    if (repositories == null || !repositories.containsKey(name)) {
+  Future<bool> _removeRepository(String name, RepositoryService repositoryService) async {
+    // Check if repository exists
+    if (!await repositoryService.isRepositoryCloned(name)) {
       return false;
     }
 
-    repositories.remove(name);
-    await _saveRepositoryConfig(config);
+    // Remove the repository directory
+    final repositoryPath = repositoryService.getRepositoryPath(name);
+    final repoDir = Directory(repositoryPath);
+    await repoDir.delete(recursive: true);
+    
+    _logger.info('🗑️  Removed repository directory: $repositoryPath');
     return true;
-  }
-
-  Future<Map<String, dynamic>> _loadRepositoryConfig() async {
-    final configFile = File(RepositoryService.configFileName);
-    if (!await configFile.exists()) {
-      return <String, dynamic>{};
-    }
-
-    try {
-      final content = await configFile.readAsString();
-      final yamlMap = loadYaml(content);
-      if (yamlMap is Map) {
-        return _convertYamlToMap(yamlMap) as Map<String, dynamic>;
-      }
-      return <String, dynamic>{};
-    } catch (e) {
-      return <String, dynamic>{};
-    }
-  }
-
-  Future<void> _saveRepositoryConfig(Map<String, dynamic> config) async {
-    final configFile = File(RepositoryService.configFileName);
-
-    const header = '''# fpx repository configuration
-# This file manages remote repositories for Mason bricks
-# 
-# Format:
-# repositories:
-#   <name>:
-#     url: <git_url>
-#     path: <path_to_bricks_in_repo>
-
-''';
-
-    final yamlContent = _mapToYaml(config);
-    await configFile.writeAsString(header + yamlContent);
-  }
-
-  String _mapToYaml(Map<String, dynamic> map, [int indent = 0]) {
-    final buffer = StringBuffer();
-    final spaces = '  ' * indent;
-
-    for (final entry in map.entries) {
-      if (entry.value is Map) {
-        buffer.writeln('${spaces}${entry.key}:');
-        buffer
-            .write(_mapToYaml(entry.value as Map<String, dynamic>, indent + 1));
-      } else {
-        buffer.writeln('${spaces}${entry.key}: ${entry.value}');
-      }
-    }
-
-    return buffer.toString();
   }
 }
 
