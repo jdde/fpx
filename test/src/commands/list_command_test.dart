@@ -1,5 +1,4 @@
-import 'dart:io';
-
+import 'package:args/command_runner.dart';
 import 'package:fpx/src/commands/list_command.dart';
 import 'package:fpx/src/services/repository_service.dart';
 import 'package:mason_logger/mason_logger.dart';
@@ -15,312 +14,251 @@ void main() {
     late Logger logger;
     late RepositoryService repositoryService;
     late ListCommand command;
-    late Directory testDir;
-    late Directory originalDir;
+    late CommandRunner<int> commandRunner;
 
-    setUp(() async {
+    setUp(() {
       logger = _MockLogger();
       repositoryService = _MockRepositoryService();
-      command = ListCommand(logger: logger, repositoryService: repositoryService);
+      command = ListCommand(
+        logger: logger,
+        repositoryService: repositoryService,
+      );
 
-      // Mock empty repositories by default
-      when(() => repositoryService.getRepositories())
-          .thenAnswer((_) async => <String, RepositoryInfo>{});
-
-      // Save original directory
-      originalDir = Directory.current;
-
-      // Create a temporary test directory
-      testDir = await Directory.systemTemp.createTemp('fpx_list_test_');
-      Directory.current = testDir;
-
-      // Ensure clean state
-      final masonYamlFile = File('mason.yaml');
-      if (await masonYamlFile.exists()) {
-        await masonYamlFile.delete();
-      }
-    });
-
-    tearDown(() async {
-      // Restore original directory first
-      Directory.current = originalDir;
-
-      // Clean up temporary directory
-      if (await testDir.exists()) {
-        await testDir.delete(recursive: true);
-      }
-    });
-
-    test('creates mason.yaml if it does not exist and shows no bricks message',
-        () async {
-      // Ensure mason.yaml doesn't exist
-      final masonYamlFile = File('mason.yaml');
-      if (await masonYamlFile.exists()) {
-        await masonYamlFile.delete();
-      }
-      expect(await masonYamlFile.exists(), isFalse);
-
-      // Run the command
-      final result = await command.run();
-
-      // Verify the file was created
-      expect(await masonYamlFile.exists(), isTrue);
-      expect(result, equals(ExitCode.success.code));
-
-      // Verify the content
-      final content = await masonYamlFile.readAsString();
-      expect(content, contains('bricks:'));
-      expect(content, contains('# Add your bricks here'));
-
-      // Verify logger calls
-      verify(() => logger.info(
-              '📦 No mason.yaml found, creating one with default settings...'))
-          .called(1);
-      verify(() =>
-              logger.success('✅ Created mason.yaml with default configuration'))
-          .called(1);
-      verify(() => logger.info('📋 No bricks or repositories configured yet'))
-          .called(1);
-      verify(() => logger.info('💡 Add bricks to mason.yaml or configure repositories:'))
-          .called(1);
-      verify(() => logger.info('   fpx repository add --name <name> --url <url>'))
-          .called(1);
-      verify(() => logger.info('   fpx init  # to create mason.yaml and default repositories'))
-          .called(1);
-    });
-
-    test('shows no bricks message when mason.yaml has empty bricks', () async {
-      // Create mason.yaml with empty bricks
-      final masonYamlFile = File('mason.yaml');
-      await masonYamlFile.writeAsString('''
-bricks:
-''');
-
-      // Run the command
-      final result = await command.run();
-
-      expect(result, equals(ExitCode.success.code));
-
-      // Verify logger calls
-      verify(() => logger.info('📋 No bricks or repositories configured yet'))
-          .called(1);
-      verify(() => logger.info('💡 Add bricks to mason.yaml or configure repositories:'))
-          .called(1);
-      verify(() => logger.info('   fpx repository add --name <name> --url <url>'))
-          .called(1);
-      verify(() => logger.info('   fpx init  # to create mason.yaml and default repositories'))
-          .called(1);
-      verifyNever(() => logger.info(
-          '📦 No mason.yaml found, creating one with default settings...'));
-    });
-
-    test('shows no bricks message when bricks node is null', () async {
-      // Create mason.yaml without bricks node
-      final masonYamlFile = File('mason.yaml');
-      await masonYamlFile.writeAsString('''
-some_other_config: value
-''');
-
-      // Run the command
-      final result = await command.run();
-
-      expect(result, equals(ExitCode.success.code));
-
-      // Verify logger calls
-      verify(() => logger.info('📋 No bricks or repositories configured yet'))
-          .called(1);
-      verify(() => logger.info('💡 Add bricks to mason.yaml or configure repositories:'))
-          .called(1);
-      verify(() => logger.info('   fpx repository add --name <name> --url <url>'))
-          .called(1);
-      verify(() => logger.info('   fpx init  # to create mason.yaml and default repositories'))
-          .called(1);
-    });
-
-    test('lists available bricks when they exist', () async {
-      // Create mason.yaml with bricks
-      final masonYamlFile = File('mason.yaml');
-      await masonYamlFile.writeAsString('''
-bricks:
-  button:
-    git:
-      url: https://github.com/unping/unping-ui.git
-      path: bricks/button
-  widget:
-    path: ./bricks/widget
-  form:
-    git:
-      url: https://github.com/example/forms.git
-''');
-
-      // Run the command
-      final result = await command.run();
-
-      expect(result, equals(ExitCode.success.code));
-
-      // Verify logger calls
-      verify(() => logger.info('Local bricks (mason.yaml):')).called(1);
-      verify(() => logger.info('  button')).called(1);
-      verify(() => logger.info('  widget')).called(1);
-      verify(() => logger.info('  form')).called(1);
-      verify(() => logger.info('')).called(1);
-      verifyNever(
-          () => logger.info('📋 No bricks or repositories configured yet'));
-    });
-
-    test('handles invalid yaml gracefully', () async {
-      // Create mason.yaml with invalid content
-      final masonYamlFile = File('mason.yaml');
-      await masonYamlFile.writeAsString('''
-bricks: [
-  invalid yaml content
-''');
-
-      // Run the command
-      final result = await command.run();
-
-      expect(result, equals(ExitCode.success.code));
-
-      // Should show no bricks message when YAML is invalid
-      verify(() => logger.info('📋 No bricks or repositories configured yet'))
-          .called(1);
-      verify(() => logger.info('💡 Add bricks to mason.yaml or configure repositories:'))
-          .called(1);
-      verify(() => logger.info('   fpx repository add --name <name> --url <url>'))
-          .called(1);
-      verify(() => logger.info('   fpx init  # to create mason.yaml and default repositories'))
-          .called(1);
-    });
-
-    test('handles non-map yaml content', () async {
-      // Create mason.yaml with non-map content
-      final masonYamlFile = File('mason.yaml');
-      await masonYamlFile.writeAsString('''
-- item1
-- item2
-''');
-
-      // Run the command
-      final result = await command.run();
-
-      expect(result, equals(ExitCode.success.code));
-
-      // Should show no bricks message when YAML is not a map
-      verify(() => logger.info('📋 No bricks or repositories configured yet'))
-          .called(1);
-      verify(() => logger.info('💡 Add bricks to mason.yaml or configure repositories:'))
-          .called(1);
-      verify(() => logger.info('   fpx repository add --name <name> --url <url>'))
-          .called(1);
-      verify(() => logger.info('   fpx init  # to create mason.yaml and default repositories'))
-          .called(1);
-    });
-
-    test('handles empty file', () async {
-      // Create empty mason.yaml
-      final masonYamlFile = File('mason.yaml');
-      await masonYamlFile.writeAsString('');
-
-      // Run the command
-      final result = await command.run();
-
-      expect(result, equals(ExitCode.success.code));
-
-      // Should show no bricks message when file is empty
-      verify(() => logger.info('📋 No bricks or repositories configured yet'))
-          .called(1);
-      verify(() => logger.info('💡 Add bricks to mason.yaml or configure repositories:'))
-          .called(1);
-      verify(() => logger.info('   fpx repository add --name <name> --url <url>'))
-          .called(1);
-      verify(() => logger.info('   fpx init  # to create mason.yaml and default repositories'))
-          .called(1);
-    });
-
-    test('shows configured repositories when they exist', () async {
-      // Create mason.yaml with no bricks
-      final masonYamlFile = File('mason.yaml');
-      await masonYamlFile.writeAsString('''
-bricks:
-''');
-
-      // Mock repositories
-      when(() => repositoryService.getRepositories()).thenAnswer((_) async => {
-        'unping-ui': RepositoryInfo(
-          name: 'unping-ui',
-          url: 'https://github.com/unping/unping-ui.git',
-          path: 'bricks',
-        ),
-        'test-repo': RepositoryInfo(
-          name: 'test-repo',
-          url: 'https://github.com/test/repo.git',
-          path: 'components',
-        ),
-      });
-
-      // Run the command
-      final result = await command.run();
-
-      expect(result, equals(ExitCode.success.code));
-
-      // Verify logger calls for repositories
-      verify(() => logger.info('Configured repositories:')).called(1);
-      verify(() => logger.info('  unping-ui: https://github.com/unping/unping-ui.git')).called(1);
-      verify(() => logger.info('  test-repo: https://github.com/test/repo.git')).called(1);
-      verify(() => logger.info('')).called(1);
-      verify(() => logger.info('💡 Use "fpx add <brick-name>" to search all repositories')).called(1);
-      verify(() => logger.info('   Or "fpx add @repo/<brick-name>" for a specific repository')).called(1);
-      
-      // Should not show the "no bricks or repositories" message
-      verifyNever(() => logger.info('📋 No bricks or repositories configured yet'));
-    });
-
-    test('shows both local bricks and repositories when both exist', () async {
-      // Create mason.yaml with bricks
-      final masonYamlFile = File('mason.yaml');
-      await masonYamlFile.writeAsString('''
-bricks:
-  button:
-    git:
-      url: https://github.com/unping/unping-ui.git
-      path: bricks/button
-''');
-
-      // Mock repositories
-      when(() => repositoryService.getRepositories()).thenAnswer((_) async => {
-        'unping-ui': RepositoryInfo(
-          name: 'unping-ui',
-          url: 'https://github.com/unping/unping-ui.git',
-          path: 'bricks',
-        ),
-      });
-
-      // Run the command
-      final result = await command.run();
-
-      expect(result, equals(ExitCode.success.code));
-
-      // Verify logger calls for both local bricks and repositories
-      verify(() => logger.info('Local bricks (mason.yaml):')).called(1);
-      verify(() => logger.info('  button')).called(1);
-      verify(() => logger.info('Configured repositories:')).called(1);
-      verify(() => logger.info('  unping-ui: https://github.com/unping/unping-ui.git')).called(1);
-      verify(() => logger.info('💡 Use "fpx add <brick-name>" to search all repositories')).called(1);
-      verify(() => logger.info('   Or "fpx add @repo/<brick-name>" for a specific repository')).called(1);
-      
-      // Should not show the "no bricks or repositories" message
-      verifyNever(() => logger.info('📋 No bricks or repositories configured yet'));
-    });
-
-    test('can be instantiated without explicit repository service', () {
-      final logger = _MockLogger();
-      final command = ListCommand(logger: logger);
-      expect(command, isNotNull);
+      commandRunner = CommandRunner<int>('test', 'Test runner')
+        ..addCommand(command);
     });
 
     test('has correct name and description', () {
       expect(command.name, equals('list'));
       expect(command.description, equals('List available bricks'));
+    });
+
+    test('can be instantiated without providing repository service', () {
+      // Test the default constructor path where RepositoryService is created internally
+      final commandWithDefaults = ListCommand(logger: logger);
+      expect(commandWithDefaults.name, equals('list'));
+      expect(commandWithDefaults.description, equals('List available bricks'));
+    });
+
+    test('lists configured repositories and components', () async {
+      // Arrange
+      const repo1 = RepositoryInfo(
+        name: 'repo1',
+        url: 'https://github.com/user/repo1',
+        path: 'path1',
+      );
+      const repo2 = RepositoryInfo(
+        name: 'repo2',
+        url: 'https://github.com/user/repo2',
+        path: 'path2',
+      );
+
+      when(() => repositoryService.getRepositories())
+          .thenAnswer((_) async => {
+                'repo1': repo1,
+                'repo2': repo2,
+              });
+
+      when(() => repositoryService.getAllAvailableComponents())
+          .thenAnswer((_) async => {
+                'repo1': ['button', 'card', 'input'],
+                'repo2': ['dialog', 'dropdown'],
+              });
+
+      // Act
+      final exitCode = await commandRunner.run(['list']);
+
+      // Assert
+      expect(exitCode, equals(ExitCode.success.code));
+
+      // Verify repositories are shown
+      verify(() => logger.info('Configured repositories:')).called(1);
+      verify(() => logger.info('  repo1: https://github.com/user/repo1')).called(1);
+      verify(() => logger.info('  repo2: https://github.com/user/repo2')).called(1);
+
+      // Verify components are shown
+      verify(() => logger.info('Available components:')).called(1);
+      verify(() => logger.info('  From repository "repo1":')).called(1);
+      verify(() => logger.info('    button')).called(1);
+      verify(() => logger.info('    card')).called(1);
+      verify(() => logger.info('    input')).called(1);
+      verify(() => logger.info('  From repository "repo2":')).called(1);
+      verify(() => logger.info('    dialog')).called(1);
+      verify(() => logger.info('    dropdown')).called(1);
+
+      // Verify help messages
+      verify(() => logger.info('💡 Use "fpx add <component-name>" to add a component')).called(1);
+      verify(() => logger.info('   Or "fpx add @repo/<component-name>" for a specific repository')).called(1);
+    });
+
+    test('shows help when no repositories are configured', () async {
+      // Arrange
+      when(() => repositoryService.getRepositories())
+          .thenAnswer((_) async => <String, RepositoryInfo>{});
+
+      when(() => repositoryService.getAllAvailableComponents())
+          .thenAnswer((_) async => <String, List<String>>{});
+
+      // Act
+      final exitCode = await commandRunner.run(['list']);
+
+      // Assert
+      expect(exitCode, equals(ExitCode.success.code));
+
+      verify(() => logger.info('📋 No repositories configured yet')).called(1);
+      verify(() => logger.info('💡 Add repositories with:')).called(1);
+      verify(() => logger.info('   fpx repository add --name <name> --url <url>')).called(1);
+    });
+
+    test('shows message when repositories exist but no components found', () async {
+      // Arrange
+      const repo1 = RepositoryInfo(
+        name: 'repo1',
+        url: 'https://github.com/user/repo1',
+        path: 'path1',
+      );
+
+      when(() => repositoryService.getRepositories())
+          .thenAnswer((_) async => {'repo1': repo1});
+
+      when(() => repositoryService.getAllAvailableComponents())
+          .thenAnswer((_) async => <String, List<String>>{});
+
+      // Act
+      final exitCode = await commandRunner.run(['list']);
+
+      // Assert
+      expect(exitCode, equals(ExitCode.success.code));
+
+      // Verify repository is shown
+      verify(() => logger.info('Configured repositories:')).called(1);
+      verify(() => logger.info('  repo1: https://github.com/user/repo1')).called(1);
+
+      // Verify no components message
+      verify(() => logger.info('📋 No components found in configured repositories')).called(1);
+      verify(() => logger.info('💡 Make sure your repositories contain valid fpx.yaml files')).called(1);
+      verify(() => logger.info('   or __brick__ directories with brick.yaml files')).called(1);
+    });
+
+    test('handles repositories with empty component lists', () async {
+      // Arrange
+      const repo1 = RepositoryInfo(
+        name: 'repo1',
+        url: 'https://github.com/user/repo1',
+        path: 'path1',
+      );
+      const repo2 = RepositoryInfo(
+        name: 'repo2',
+        url: 'https://github.com/user/repo2',
+        path: 'path2',
+      );
+
+      when(() => repositoryService.getRepositories())
+          .thenAnswer((_) async => {
+                'repo1': repo1,
+                'repo2': repo2,
+              });
+
+      when(() => repositoryService.getAllAvailableComponents())
+          .thenAnswer((_) async => {
+                'repo1': <String>[], // Empty list
+                'repo2': ['button', 'card'], // Non-empty list
+              });
+
+      // Act
+      final exitCode = await commandRunner.run(['list']);
+
+      // Assert
+      expect(exitCode, equals(ExitCode.success.code));
+
+      // Verify repositories are shown
+      verify(() => logger.info('Configured repositories:')).called(1);
+      verify(() => logger.info('  repo1: https://github.com/user/repo1')).called(1);
+      verify(() => logger.info('  repo2: https://github.com/user/repo2')).called(1);
+
+      // Verify components are shown
+      verify(() => logger.info('Available components:')).called(1);
+      
+      // repo1 should not be shown since it has no components
+      verifyNever(() => logger.info('  From repository "repo1":'));
+      
+      // repo2 should be shown with its components
+      verify(() => logger.info('  From repository "repo2":')).called(1);
+      verify(() => logger.info('    button')).called(1);
+      verify(() => logger.info('    card')).called(1);
+
+      // Verify help messages
+      verify(() => logger.info('💡 Use "fpx add <component-name>" to add a component')).called(1);
+      verify(() => logger.info('   Or "fpx add @repo/<component-name>" for a specific repository')).called(1);
+    });
+
+    test('handles single repository with single component', () async {
+      // Arrange
+      const repo1 = RepositoryInfo(
+        name: 'my-repo',
+        url: 'https://github.com/user/my-repo',
+        path: 'components',
+      );
+
+      when(() => repositoryService.getRepositories())
+          .thenAnswer((_) async => {'my-repo': repo1});
+
+      when(() => repositoryService.getAllAvailableComponents())
+          .thenAnswer((_) async => {
+                'my-repo': ['button'],
+              });
+
+      // Act
+      final exitCode = await commandRunner.run(['list']);
+
+      // Assert
+      expect(exitCode, equals(ExitCode.success.code));
+
+      // Verify repository is shown
+      verify(() => logger.info('Configured repositories:')).called(1);
+      verify(() => logger.info('  my-repo: https://github.com/user/my-repo')).called(1);
+
+      // Verify component is shown
+      verify(() => logger.info('Available components:')).called(1);
+      verify(() => logger.info('  From repository "my-repo":')).called(1);
+      verify(() => logger.info('    button')).called(1);
+
+      // Verify help messages
+      verify(() => logger.info('💡 Use "fpx add <component-name>" to add a component')).called(1);
+      verify(() => logger.info('   Or "fpx add @repo/<component-name>" for a specific repository')).called(1);
+    });
+
+    test('handles exception from repository service gracefully', () async {
+      // Arrange
+      when(() => repositoryService.getRepositories())
+          .thenThrow(Exception('Failed to load repositories'));
+
+      // Act & Assert
+      expect(
+        () => commandRunner.run(['list']),
+        throwsA(isA<Exception>()),
+      );
+    });
+
+    test('handles exception from getAllAvailableComponents gracefully', () async {
+      // Arrange
+      const repo1 = RepositoryInfo(
+        name: 'repo1',
+        url: 'https://github.com/user/repo1',
+        path: 'path1',
+      );
+
+      when(() => repositoryService.getRepositories())
+          .thenAnswer((_) async => {'repo1': repo1});
+
+      when(() => repositoryService.getAllAvailableComponents())
+          .thenThrow(Exception('Failed to load components'));
+
+      // Act & Assert
+      expect(
+        () => commandRunner.run(['list']),
+        throwsA(isA<Exception>()),
+      );
     });
   });
 }
