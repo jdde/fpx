@@ -83,6 +83,12 @@ jobs:
           git add pubspec.yaml coverage_badge.svg
           git commit -m "Bump version to ${{ env.version }} and update coverage badge"
 
+      - name: Generate version.dart file
+        run: |
+          dart run build_runner build
+          git add lib/src/version.dart
+          git commit -m "Update generated version.dart to ${{ env.version }}"
+
       - name: Add empty Section in CHANGELOG.md
         run: |
           # Add new empty section at the bottom of CHANGELOG.md
