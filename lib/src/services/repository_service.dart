@@ -14,7 +14,8 @@ class RepositoryService {
     Logger? logger,
   }) : _logger = logger ?? Logger();
 
-  static const String _repositoriesDir = '.fpx_repositories';
+  /// Directory name where repositories are cloned locally.
+  static const String repositoriesDir = '.fpx_repositories';
 
   final Logger _logger;
   late final RepositoryPostCloneService _postCloneService = 
@@ -22,7 +23,7 @@ class RepositoryService {
 
   /// Get list of available repositories by reading .fpx_repositories directory
   Future<List<String>> _getAvailableRepositories() async {
-    final dir = Directory(_repositoriesDir);
+    final dir = Directory(repositoriesDir);
     
     if (!await dir.exists()) {
       return [];
@@ -223,7 +224,7 @@ class RepositoryService {
 
   /// Clone a repository locally for processing.
   Future<Directory> cloneRepository(String name, String url) async {
-    final repoDir = Directory(path.join(_repositoriesDir, name));
+    final repoDir = Directory(path.join(repositoriesDir, name));
     
     // Remove existing directory if it exists
     if (await repoDir.exists()) {
@@ -231,7 +232,7 @@ class RepositoryService {
     }
     
     // Create repositories directory
-    await Directory(_repositoriesDir).create(recursive: true);
+    await Directory(repositoriesDir).create(recursive: true);
     
     // Clone the repository
     final result = await Process.run( // coverage:ignore-line
@@ -256,7 +257,7 @@ class RepositoryService {
 
   /// Update an existing cloned repository.
   Future<void> updateRepository(String name) async {
-    final repoDir = Directory(path.join(_repositoriesDir, name));
+    final repoDir = Directory(path.join(repositoriesDir, name));
     
     if (!await repoDir.exists()) {
       throw Exception('Repository "$name" not found locally');
@@ -276,12 +277,12 @@ class RepositoryService {
 
   /// Get the local directory path for a cloned repository.
   String getRepositoryPath(String name) {
-    return path.join(_repositoriesDir, name);
+    return path.join(repositoriesDir, name);
   }
 
   /// Check if a repository is cloned locally.
   Future<bool> isRepositoryCloned(String name) async {
-    final repoDir = Directory(path.join(_repositoriesDir, name));
+    final repoDir = Directory(path.join(repositoriesDir, name));
     return await repoDir.exists();
   }
 

@@ -7,7 +7,7 @@ import 'package:path/path.dart' as path;
 
 /// Helper function to get list of available repositories by reading .fpx_repositories directory
 Future<List<String>> _getAvailableRepositories() async {
-  const repositoriesDir = '.fpx_repositories';
+  const repositoriesDir = RepositoryService.repositoriesDir;
   final dir = Directory(repositoriesDir);
   
   if (!await dir.exists()) {
@@ -258,7 +258,7 @@ class RepositoryRemoveCommand extends Command<int> {
     }
 
     // Remove the repository directory
-    const repositoriesDir = '.fpx_repositories';
+    final repositoriesDir = RepositoryService.repositoriesDir;
     final repoDir = Directory(path.join(repositoriesDir, name));
     if (await repoDir.exists()) {
       await repoDir.delete(recursive: true);
