@@ -14,35 +14,36 @@ class RepositoryService {
     Logger? logger,
   }) : _logger = logger ?? Logger();
 
-  static const String configFileName = '.fpx_repositories.yaml';
-  static const String _userConfigFileName = '.fpx_repositories.local.yaml';
   static const String _repositoriesDir = '.fpx_repositories';
 
   final Logger _logger;
   late final RepositoryPostCloneService _postCloneService = 
       RepositoryPostCloneService(logger: _logger);
 
+  /// Get list of available repositories by reading .fpx_repositories directory
+  Future<List<String>> _getAvailableRepositories() async {
+    final dir = Directory(_repositoriesDir);
+    
+    if (!await dir.exists()) {
+      return [];
+    }
+    
+    final repositories = <String>[];
+    await for (final entity in dir.list()) {
+      if (entity is Directory) {
+        final name = path.basename(entity.path);
+        repositories.add(name);
+      }
+    }
+    
+    return repositories;
+  }
+
   /// Load repository configuration from file.
   Future<Map<String, dynamic>> loadRepositoryConfig() async {
-    final defaultConfig = await _loadDefaultRepositoryConfig();
-    final userConfig = await _loadUserRepositoryConfig();
-
-    // Merge configurations (user overrides default)
-    final merged = <String, dynamic>{};
-    if (defaultConfig['repositories'] is Map) {
-      final reposMap = defaultConfig['repositories'] as Map;
-      merged['repositories'] = _convertYamlMapToMap(reposMap);
-    } else {
-      merged['repositories'] = <String, dynamic>{};
-    }
-
-    if (userConfig['repositories'] is Map) {
-      final userRepos = userConfig['repositories'] as Map<String, dynamic>;
-      final mergedRepos = merged['repositories'] as Map<String, dynamic>;
-      mergedRepos.addAll(userRepos);
-    }
-
-    return merged;
+    // This method is kept for backward compatibility but now returns empty config
+    // since we're using directory-based repository discovery
+    return <String, dynamic>{'repositories': <String, dynamic>{}};
   }
 
   /// Find a brick by name, optionally with repository namespace.
@@ -52,10 +53,9 @@ class RepositoryService {
   /// - `@repo/brick_name` - searches specific repository
   /// - `@repo/path/brick_name` - searches specific repository with path
   Future<List<BrickSearchResult>> findBrick(String brickIdentifier) async {
-    final config = await loadRepositoryConfig();
-    final repositories = config['repositories'] as Map<String, dynamic>?;
+    final repositories = await _getAvailableRepositories();
 
-    if (repositories == null || repositories.isEmpty) {
+    if (repositories.isEmpty) {
       return [];
     }
 
@@ -69,16 +69,16 @@ class RepositoryService {
         final repoName = parts[0];
         final brickPath = parts.sublist(1).join('/');
 
-        if (repositories.containsKey(repoName)) {
-          final repoConfig = _convertYamlMapToMap(repositories[repoName] as Map);
-          
+        if (repositories.contains(repoName)) {
           try {
             // Ensure repository is cloned before searching
-            await _ensureRepositoryCloned(repoName, repoConfig);
+            if (!await isRepositoryCloned(repoName)) {
+              _logger.warn('Repository "$repoName" is not cloned locally');
+              return results;
+            }
             
             final brick = await _createBrickFromRepository(
               repoName,
-              repoConfig,
               brickPath,
             );
             if (brick != null) {
@@ -97,13 +97,12 @@ class RepositoryService {
       }
     } else {
       // Search all repositories for the brick name
-      for (final entry in repositories.entries) {
-        final repoName = entry.key;
-        final repoConfig = _convertYamlMapToMap(entry.value as Map);
-
+      for (final repoName in repositories) {
         try {
-          // Ensure repository is cloned before searching
-          await _ensureRepositoryCloned(repoName, repoConfig);
+          // Only search in cloned repositories
+          if (!await isRepositoryCloned(repoName)) {
+            continue;
+          }
           
           // Check if component exists in auto-detected components
           final detectedComponents = await scanForBricks(repoName);
@@ -111,7 +110,6 @@ class RepositoryService {
           if (detectedComponents.contains(brickIdentifier)) {
             final brick = await _createBrickFromRepository(
               repoName,
-              repoConfig,
               brickIdentifier,
             );
 
@@ -134,24 +132,12 @@ class RepositoryService {
     return results;
   }
 
-  /// Ensure a repository is cloned locally, clone it if it's not.
-  Future<void> _ensureRepositoryCloned(String repoName, Map<String, dynamic> repoConfig) async {
-    if (!await isRepositoryCloned(repoName)) {
-      final url = repoConfig['url'] as String;
-      await cloneRepository(repoName, url);
-    }
-  }
-
-  /// Create a brick from repository configuration.
+  /// Create a brick from repository directory structure.
   Future<Brick?> _createBrickFromRepository(
     String repoName,
-    Map<String, dynamic> repoConfig,
     String brickPath,
   ) async {
     try {
-      // Always ensure repository is cloned
-      await _ensureRepositoryCloned(repoName, repoConfig);
-      
       // Check if repository is cloned locally
       if (await isRepositoryCloned(repoName)) {
         final repoPath = getRepositoryPath(repoName);
@@ -183,7 +169,8 @@ class RepositoryService {
         }
         
         // Fallback: try standard brick location in cloned repo
-        final basePath = repoConfig['path'] as String;
+        // Default to 'bricks' as the base path
+        const basePath = 'bricks';
         final fullBrickPath = '$basePath/$brickPath';
         final localPath = path.join(repoPath, fullBrickPath);
         
@@ -206,20 +193,16 @@ class RepositoryService {
 
   /// Get all configured repositories.
   Future<Map<String, RepositoryInfo>> getRepositories() async {
-    final config = await loadRepositoryConfig();
-    final repositories = config['repositories'] as Map<String, dynamic>?;
-
-    if (repositories == null) {
-      return {};
-    }
-
+    final repositories = await _getAvailableRepositories();
     final result = <String, RepositoryInfo>{};
-    for (final entry in repositories.entries) {
-      final repoConfig = _convertYamlMapToMap(entry.value as Map);
-      result[entry.key] = RepositoryInfo(
-        name: entry.key,
-        url: repoConfig['url'] as String,
-        path: repoConfig['path'] as String,
+    
+    for (final repoName in repositories) {
+      // Since we're only reading from directory structure, we provide basic info
+      // The actual URL is not available unless stored elsewhere
+      result[repoName] = RepositoryInfo(
+        name: repoName,
+        url: '', // URL not available from directory structure
+        path: 'bricks', // Default path
       );
     }
 
@@ -228,72 +211,15 @@ class RepositoryService {
 
   /// Initialize default repositories.
   Future<void> initializeDefaultRepositories() async {
-    final config = await loadRepositoryConfig();
+    final repositories = await _getAvailableRepositories();
 
-    // Add default repository if none exist
-    if (config['repositories'] == null ||
-        (config['repositories'] as Map).isEmpty) {
-      // Default repositories will be loaded from .fpx_repositories.yaml
-      // No need to create them programmatically
+    // Check if any repositories exist
+    if (repositories.isEmpty) {
+      // No repositories available from directory structure
+      // Note: Repositories are now managed by directory structure only
     }
   }
 
-  /// Load default repository configuration.
-  Future<Map<String, dynamic>> _loadDefaultRepositoryConfig() async {
-    final defaultConfigFile = File(configFileName);
-    if (!await defaultConfigFile.exists()) {
-      return <String, dynamic>{};
-    }
-
-    try {
-      final content = await defaultConfigFile.readAsString();
-      final yamlMap = loadYaml(content);
-      if (yamlMap is Map) {
-        return _convertYamlMapToMap(yamlMap);
-      }
-      return <String, dynamic>{};
-    } catch (e) {
-      return <String, dynamic>{}; // coverage:ignore-line
-    }
-  }
-
-  /// Load user-specific repository configuration.
-  Future<Map<String, dynamic>> _loadUserRepositoryConfig() async {
-    final userConfigFile = File(_userConfigFileName);
-    if (!await userConfigFile.exists()) {
-      return <String, dynamic>{};
-    }
-
-    try {
-      final content = await userConfigFile.readAsString();
-      final yamlMap = loadYaml(content);
-      if (yamlMap is Map) {
-        return _convertYamlMapToMap(yamlMap);
-      }
-      return <String, dynamic>{};
-    } catch (e) {
-      return <String, dynamic>{}; // coverage:ignore-line
-    }
-  }
-
-  /// Save repository configuration to file.
-  Future<void> saveRepositoryConfig(Map<String, dynamic> config) async {
-    final configFile = File(configFileName);
-
-    const header = '''# fpx repository configuration
-# This file manages remote repositories for Mason bricks
-# 
-# Format:
-# repositories:
-#   <name>:
-#     url: <git_url>
-#     path: <path_to_bricks_in_repo>
-
-''';
-
-    final yamlContent = _mapToYaml(config);
-    await configFile.writeAsString(header + yamlContent);
-  }
 
   /// Clone a repository locally for processing.
   Future<Directory> cloneRepository(String name, String url) async {
@@ -384,26 +310,22 @@ class RepositoryService {
 
   /// Get all available components from all configured repositories.
   Future<Map<String, List<String>>> getAllAvailableComponents() async {
-    final config = await loadRepositoryConfig();
-    final repositories = config['repositories'] as Map<String, dynamic>?;
+    final repositories = await _getAvailableRepositories();
     final allComponents = <String, List<String>>{};
 
-    if (repositories == null || repositories.isEmpty) {
+    if (repositories.isEmpty) {
       return allComponents;
     }
 
-    for (final entry in repositories.entries) {
-      final repoName = entry.key;
-      final repoConfig = _convertYamlMapToMap(entry.value as Map);
-
+    for (final repoName in repositories) {
       try {
-        // Ensure repository is cloned before detecting components
-        await _ensureRepositoryCloned(repoName, repoConfig);
-        
-        // Detect components in this repository
-        final components = await scanForBricks(repoName);
-        if (components.isNotEmpty) {
-          allComponents[repoName] = components;
+        // Only scan cloned repositories
+        if (await isRepositoryCloned(repoName)) {
+          // Detect components in this repository
+          final components = await scanForBricks(repoName);
+          if (components.isNotEmpty) {
+            allComponents[repoName] = components;
+          }
         }
       } catch (e) {
         _logger.detail('Failed to detect components in repository $repoName: $e');
@@ -466,23 +388,6 @@ class RepositoryService {
     }
     
     return null;
-  }
-
-  String _mapToYaml(Map<String, dynamic> map, [int indent = 0]) {
-    final buffer = StringBuffer();
-    final spaces = '  ' * indent;
-
-    for (final entry in map.entries) {
-      if (entry.value is Map) {
-        buffer.writeln('${spaces}${entry.key}:');
-        buffer
-            .write(_mapToYaml(entry.value as Map<String, dynamic>, indent + 1));
-      } else {
-        buffer.writeln('${spaces}${entry.key}: ${entry.value}');
-      }
-    }
-
-    return buffer.toString();
   }
 
   /// Recursively converts a YamlMap to a Map<String, dynamic>
