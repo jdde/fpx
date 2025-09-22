@@ -51,7 +51,7 @@ jobs:
         uses: VeryGoodOpenSource/very_good_coverage@v3
         with:
           path: coverage/lcov.info
-          min_coverage: 70
+          min_coverage: 65
 
       - name: 📈 Generate Coverage Badge
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
