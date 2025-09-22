@@ -235,7 +235,7 @@ class AddCommand extends Command<int> {
     _logger.success('✅ Successfully generated ${selectedResult.brickName} component!');
     _logger.info('Generated ${files.length} file(s):');
     for (final file in files) {
-      _logger.detail('  ${file.path}');
+      _logger.info('  ${file.path}');
     }
 
     return ExitCode.success.code;
