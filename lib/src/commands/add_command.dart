@@ -60,7 +60,14 @@ class AddCommand extends Command<int> {
     }
 
     final component = argResults!.rest.first;
-    final specificRepository = argResults!['repository'] as String?;
+    String? specificRepository = argResults!['repository'] as String?;
+    
+    // When there is only one repository configured, set parameter to that name
+    final repositories = await _repositoryService.getRepositories();
+    if (repositories.length == 1 && specificRepository == null) {
+      specificRepository = repositories.keys.first;
+      _logger.detail('Only one repository configured, using: $specificRepository');
+    }
 
     try {
       // Search for the component in repositories
