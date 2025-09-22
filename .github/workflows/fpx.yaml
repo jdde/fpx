@@ -41,6 +41,7 @@ jobs:
         run: dart pub get
 
       - name: 🔧 Verify Generated Files
+        shell: bash
         run: |
           dart run build_runner build
           if ! git diff --quiet; then
@@ -124,6 +125,7 @@ jobs:
         run: dart pub get
 
       - name: 🔧 Verify Generated Files
+        shell: bash
         run: |
           dart run build_runner build
           if ! git diff --quiet; then
