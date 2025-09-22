@@ -40,6 +40,15 @@ jobs:
       - name: 📦 Install Dependencies
         run: dart pub get
 
+      - name: 🔧 Verify Generated Files
+        run: |
+          dart run build_runner build
+          if ! git diff --quiet; then
+            echo "Generated files are out of sync. Please run 'dart run build_runner build' and commit the changes."
+            git diff
+            exit 1
+          fi
+
       - name: 🧪 Run Tests with Coverage
         run: dart test --coverage=coverage
 
@@ -113,6 +122,15 @@ jobs:
 
       - name: 📦 Install Dependencies
         run: dart pub get
+
+      - name: 🔧 Verify Generated Files
+        run: |
+          dart run build_runner build
+          if ! git diff --quiet; then
+            echo "Generated files are out of sync. Please run 'dart run build_runner build' and commit the changes."
+            git diff
+            exit 1
+          fi
 
       - name: 🧪 Run Tests
         run: dart test --concurrency=1
