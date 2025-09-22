@@ -68,11 +68,12 @@ class AddCommand extends Command<int> {
       specificRepository = repositories.keys.first;
       _logger.detail('Only one repository configured, using: $specificRepository');
     }
+    
 
     try {
       // Search for the component in repositories
       final searchResults = await _findComponentInRepositories(component, specificRepository);
-      
+
       if (searchResults.isEmpty) {
         final repositories = await _repositoryService.getRepositories();
         if (repositories.isEmpty) {
@@ -157,35 +158,6 @@ class AddCommand extends Command<int> {
     String component,
     String? specificRepository,
   ) async {
-    // If source is provided, handle it separately (legacy behavior)
-    final source = argResults!['source'] as String?;
-    if (source != null) {
-      if (source.startsWith('http') || source.contains('github.com')) {
-        // Handle remote Git repository
-        _logger.info('Fetching brick from remote source: $source');
-        final brick = Brick.git(GitPath(source));
-        return [
-          BrickSearchResult(
-            brickName: component,
-            repositoryName: 'remote',
-            brick: brick,
-            fullPath: component,
-          )
-        ];
-      } else if (await Directory(source).exists()) {
-        // Handle local path
-        final brick = Brick.path(source);
-        return [
-          BrickSearchResult(
-            brickName: component,
-            repositoryName: 'local',
-            brick: brick,
-            fullPath: component,
-          )
-        ];
-      }
-    }
-
     // Search in configured repositories
     List<BrickSearchResult> searchResults;
     if (specificRepository != null) {

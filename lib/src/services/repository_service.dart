@@ -106,7 +106,8 @@ class RepositoryService {
           await _ensureRepositoryCloned(repoName, repoConfig);
           
           // Check if component exists in auto-detected components
-          final detectedComponents = await detectComponents(repoName);
+          final detectedComponents = await scanForBricks(repoName);
+
           if (detectedComponents.contains(brickIdentifier)) {
             final brick = await _createBrickFromRepository(
               repoName,
@@ -380,30 +381,6 @@ class RepositoryService {
     return null;
   }
 
-  /// Auto-detect components in a cloned repository based on fpx.yaml.
-  Future<List<String>> detectComponents(String repositoryName) async {
-    final fpxConfig = await readFpxConfig(repositoryName);
-    final components = <String>[];
-    
-    if (fpxConfig == null) {
-      // Fallback: scan for brick.yaml files in the repository
-      return await _scanForBricks(repositoryName);
-    }
-    
-    // Parse components from fpx.yaml
-    final componentsConfig = fpxConfig['components'];
-    if (componentsConfig is Map) {
-      components.addAll(componentsConfig.keys.cast<String>());
-    }
-    
-    // Also check for a 'bricks' section for backward compatibility
-    final bricksConfig = fpxConfig['bricks'];
-    if (bricksConfig is Map) {
-      components.addAll(bricksConfig.keys.cast<String>());
-    }
-    
-    return components;
-  }
 
   /// Get all available components from all configured repositories.
   Future<Map<String, List<String>>> getAllAvailableComponents() async {
@@ -424,7 +401,7 @@ class RepositoryService {
         await _ensureRepositoryCloned(repoName, repoConfig);
         
         // Detect components in this repository
-        final components = await detectComponents(repoName);
+        final components = await scanForBricks(repoName);
         if (components.isNotEmpty) {
           allComponents[repoName] = components;
         }
@@ -438,7 +415,7 @@ class RepositoryService {
   }
 
   /// Scan repository directory for brick.yaml files.
-  Future<List<String>> _scanForBricks(String repositoryName) async {
+  Future<List<String>> scanForBricks(String repositoryName) async {
     final repoPath = getRepositoryPath(repositoryName);
     final repoDir = Directory(repoPath);
     final components = <String>[];

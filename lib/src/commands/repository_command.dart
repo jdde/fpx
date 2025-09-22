@@ -101,7 +101,7 @@ class RepositoryAddCommand extends Command<int> {
         _logger.info('✅ Repository cloned successfully');
         
         // Auto-detect components in the repository
-        final components = await repositoryService.detectComponents(repositoryName);
+        final components = await repositoryService.scanForBricks(repositoryName);
         
         _logger.success('✅ Successfully added repository "$repositoryName"');
         _logger.info('   URL: ${parsedRepo.url}');
@@ -439,7 +439,7 @@ class RepositoryListCommand extends Command<int> {
         // Show detected components if repository is cloned
         if (isCloned) {
           try {
-            final components = await repositoryService.detectComponents(repoName);
+            final components = await repositoryService.scanForBricks(repoName);
             if (components.isNotEmpty) {
               _logger.info('    Components: ${components.join(', ')}');
             } else {
@@ -565,7 +565,7 @@ class RepositoryUpdateCommand extends Command<int> {
       }
       
       // Re-detect components after update
-      final components = await repositoryService.detectComponents(repoName);
+      final components = await repositoryService.scanForBricks(repoName);
       
       _logger.success('✅ Successfully updated repository "$repoName"');
       if (components.isNotEmpty) {
