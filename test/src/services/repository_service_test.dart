@@ -310,6 +310,18 @@ repositories:
         final config = await service.loadRepositoryConfig();
         expect(config['repositories'], isA<Map<String, dynamic>>());
       });
+
+      test('handles user config file read error', () async {
+        // Create user config file with invalid permissions or content that causes read error
+        final userConfigFile = File('.fpx_repositories.local.yaml');
+        await userConfigFile.writeAsString('''
+invalid: [
+  yaml: content
+''');
+
+        final config = await service.loadRepositoryConfig();
+        expect(config['repositories'], isA<Map<String, dynamic>>());
+      });
     });
 
     group('findBrick', () {
@@ -434,6 +446,44 @@ components:
 
         final results = await service.findBrick('button');
         expect(results.length, equals(2));
+      });
+
+      test('handles repository access errors when searching all repositories', () async {
+        final configFile = File('.fpx_repositories.yaml');
+        await configFile.writeAsString('''
+repositories:
+  good-repo:
+    url: https://github.com/good/repo.git
+    path: bricks
+  error-repo:
+    url: https://github.com/error/repo.git
+    path: bricks
+''');
+
+        // Create only one repository - the other will cause access error
+        final goodRepo = Directory('.fpx_repositories/good-repo');
+        await goodRepo.create(recursive: true);
+        
+        final fpxFile = File('.fpx_repositories/good-repo/fpx.yaml');
+        await fpxFile.writeAsString('''
+components:
+  button:
+    path: lib/src/components
+''');
+
+        // Create actual component to satisfy brick creation
+        final compDir = Directory('.fpx_repositories/good-repo/lib/src/components/button');
+        await compDir.create(recursive: true);
+        final brickFile = File('.fpx_repositories/good-repo/lib/src/components/button/brick.yaml');
+        await brickFile.writeAsString('name: button');
+        final brickDir = Directory('.fpx_repositories/good-repo/lib/src/components/button/__brick__');
+        await brickDir.create();
+
+        // Don't create error-repo directory to trigger error
+
+        final results = await service.findBrick('button');
+        expect(results.length, equals(1));
+        expect(results.first.repositoryName, equals('good-repo'));
       });
     });
 
@@ -784,6 +834,9 @@ repositories:
       list:
         - item1
         - item2
+        - nested_list:
+            - sub_item1
+            - sub_item2
 ''');
 
         final config = await service.loadRepositoryConfig();
@@ -793,6 +846,11 @@ repositories:
         
         expect(configSection['nested'], isA<Map<String, dynamic>>());
         expect(configSection['list'], isA<List<dynamic>>());
+        
+        final list = configSection['list'] as List<dynamic>;
+        expect(list[2], isA<Map<String, dynamic>>());
+        final nestedListMap = list[2] as Map<String, dynamic>;
+        expect(nestedListMap['nested_list'], isA<List<dynamic>>());
       });
     });
 
@@ -821,6 +879,68 @@ repositories:
         expect(content, contains('    path: bricks'));
         expect(content, contains('    nested:'));
         expect(content, contains('      value: test'));
+      });
+    });
+
+    group('getAllAvailableComponents', () {
+      test('returns empty map when no repositories configured', () async {
+        final allComponents = await service.getAllAvailableComponents();
+        expect(allComponents.isEmpty, isTrue);
+      });
+
+      test('returns empty map when repositories is null', () async {
+        final configFile = File('.fpx_repositories.yaml');
+        await configFile.writeAsString('''
+other_config: value
+''');
+
+        final allComponents = await service.getAllAvailableComponents();
+        expect(allComponents.isEmpty, isTrue);
+      });
+
+      test('handles repository access errors gracefully', () async {
+        final configFile = File('.fpx_repositories.yaml');
+        await configFile.writeAsString('''
+repositories:
+  error-repo:
+    url: https://github.com/error/repo.git
+    path: bricks
+''');
+
+        // Don't create the repository directory to trigger error
+        final allComponents = await service.getAllAvailableComponents();
+        expect(allComponents.isEmpty, isTrue);
+      });
+
+      test('returns components from successfully accessed repositories', () async {
+        final configFile = File('.fpx_repositories.yaml');
+        await configFile.writeAsString('''
+repositories:
+  good-repo:
+    url: https://github.com/good/repo.git
+    path: bricks
+  bad-repo:
+    url: https://github.com/bad/repo.git
+    path: bricks
+''');
+
+        // Create one repository with components
+        final goodRepo = Directory('.fpx_repositories/good-repo');
+        await goodRepo.create(recursive: true);
+        
+        final fpxFile = File('.fpx_repositories/good-repo/fpx.yaml');
+        await fpxFile.writeAsString('''
+components:
+  button:
+    path: lib/src/components
+''');
+
+        // Don't create bad-repo to trigger error for that one
+
+        final allComponents = await service.getAllAvailableComponents();
+        expect(allComponents.containsKey('good-repo'), isTrue);
+        expect(allComponents['good-repo'], contains('button'));
+        expect(allComponents.containsKey('bad-repo'), isFalse);
       });
     });
 

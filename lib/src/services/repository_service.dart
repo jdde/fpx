@@ -405,6 +405,38 @@ class RepositoryService {
     return components;
   }
 
+  /// Get all available components from all configured repositories.
+  Future<Map<String, List<String>>> getAllAvailableComponents() async {
+    final config = await loadRepositoryConfig();
+    final repositories = config['repositories'] as Map<String, dynamic>?;
+    final allComponents = <String, List<String>>{};
+
+    if (repositories == null || repositories.isEmpty) {
+      return allComponents;
+    }
+
+    for (final entry in repositories.entries) {
+      final repoName = entry.key;
+      final repoConfig = _convertYamlMapToMap(entry.value as Map);
+
+      try {
+        // Ensure repository is cloned before detecting components
+        await _ensureRepositoryCloned(repoName, repoConfig);
+        
+        // Detect components in this repository
+        final components = await detectComponents(repoName);
+        if (components.isNotEmpty) {
+          allComponents[repoName] = components;
+        }
+      } catch (e) {
+        _logger.detail('Failed to detect components in repository $repoName: $e');
+        // Continue with other repositories
+      }
+    }
+
+    return allComponents;
+  }
+
   /// Scan repository directory for brick.yaml files.
   Future<List<String>> _scanForBricks(String repositoryName) async {
     final repoPath = getRepositoryPath(repositoryName);
