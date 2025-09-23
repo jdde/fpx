@@ -645,6 +645,94 @@ components:
         expect(true, isTrue); // Placeholder test
       });
     });
+
+    group('YAML conversion utilities', () {
+      test('_convertYamlMapToMap converts nested YAML map correctly', () async {
+        // Create a test repository with fpx.yaml to trigger the conversion
+        final repoDir = Directory('.fpx_repositories/yaml-test-repo');
+        await repoDir.create(recursive: true);
+        
+        final fpxFile = File('.fpx_repositories/yaml-test-repo/fpx.yaml');
+        await fpxFile.writeAsString('''
+components:
+  button:
+    path: lib/src/components
+    nested:
+      property: value
+      list:
+        - item1
+        - item2
+variables:
+  colors:
+    primary: "#000000"
+''');
+
+        final config = await service.readFpxConfig('yaml-test-repo');
+        expect(config, isNotNull);
+        
+        // Verify the conversion worked correctly
+        final components = config!['components'] as Map<String, dynamic>;
+        expect(components['button'], isA<Map<String, dynamic>>());
+        
+        final buttonConfig = components['button'] as Map<String, dynamic>;
+        expect(buttonConfig['path'], equals('lib/src/components'));
+        expect(buttonConfig['nested'], isA<Map<String, dynamic>>());
+        
+        final nested = buttonConfig['nested'] as Map<String, dynamic>;
+        expect(nested['property'], equals('value'));
+        expect(nested['list'], isA<List<dynamic>>());
+        
+        final list = nested['list'] as List<dynamic>;
+        expect(list, contains('item1'));
+        expect(list, contains('item2'));
+      });
+
+      test('_convertYamlListToList converts nested YAML list correctly', () async {
+        // Create a test repository with fpx.yaml containing complex lists
+        final repoDir = Directory('.fpx_repositories/yaml-list-test-repo');
+        await repoDir.create(recursive: true);
+        
+        final fpxFile = File('.fpx_repositories/yaml-list-test-repo/fpx.yaml');
+        await fpxFile.writeAsString('''
+components:
+  button:
+    dependencies:
+      - name: flutter
+        version: ">=3.0.0"
+      - name: material
+        nested:
+          config: true
+          items:
+            - subitem1
+            - subitem2
+''');
+
+        final config = await service.readFpxConfig('yaml-list-test-repo');
+        expect(config, isNotNull);
+        
+        final components = config!['components'] as Map<String, dynamic>;
+        final buttonConfig = components['button'] as Map<String, dynamic>;
+        final dependencies = buttonConfig['dependencies'] as List<dynamic>;
+        
+        expect(dependencies.length, equals(2));
+        
+        final firstDep = dependencies[0] as Map<String, dynamic>;
+        expect(firstDep['name'], equals('flutter'));
+        expect(firstDep['version'], equals('>=3.0.0'));
+        
+        final secondDep = dependencies[1] as Map<String, dynamic>;
+        expect(secondDep['name'], equals('material'));
+        expect(secondDep['nested'], isA<Map<String, dynamic>>());
+        
+        final nested = secondDep['nested'] as Map<String, dynamic>;
+        expect(nested['config'], equals(true));
+        expect(nested['items'], isA<List<dynamic>>());
+        
+        final items = nested['items'] as List<dynamic>;
+        expect(items, contains('subitem1'));
+        expect(items, contains('subitem2'));
+      });
+    });
   });
 
   group('BrickSearchResult', () {
