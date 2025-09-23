@@ -27,15 +27,6 @@ void main() {
       testDir = await Directory.systemTemp.createTemp('fpx_repo_test_');
       Directory.current = testDir;
 
-      // Clean up any existing config files
-      final configFile = File('.fpx_repositories.yaml');
-      if (await configFile.exists()) {
-        await configFile.delete();
-      }
-      final userConfigFile = File('.fpx_repositories.local.yaml');
-      if (await userConfigFile.exists()) {
-        await userConfigFile.delete();
-      }
     });
 
     tearDown(() async {
