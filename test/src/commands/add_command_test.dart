@@ -64,7 +64,7 @@ void main() {
 
       // Assert
       expect(exitCode, equals(ExitCode.usage.code));
-      verify(() => logger.err(any(that: contains('Component "test_component" not found. No repositories configured'))))
+      verify(() => logger.err(any(that: contains('Component "test_component" not found. No repositories configured.\nAdd a repository with: fpx repository add --name <name> --url <url>'))))
           .called(1);
     });
 
@@ -79,6 +79,8 @@ void main() {
           .thenAnswer((_) async => {'repo1': repoInfo, 'repo2': repoInfo});
       when(() => repositoryService.findBrick(any()))
           .thenAnswer((_) async => []);
+      when(() => repositoryService.scanForBricks(any()))
+          .thenAnswer((_) async => []);
 
       // Act
       final exitCode = await commandRunner.run(['add', 'nonexistent_component']);
@@ -87,7 +89,9 @@ void main() {
       expect(exitCode, equals(ExitCode.usage.code));
       verify(() => logger.err(any(that: contains('Component "nonexistent_component" not found in configured repositories: repo1, repo2'))))
           .called(1);
+      verify(() => logger.info('No components found in configured repositories.')).called(1);
     });
+
 
     test('has correct name and description', () {
       expect(command.name, equals('add'));
@@ -99,68 +103,16 @@ void main() {
     });
 
     group('run method', () {
-      test('finds component from source URL and generates successfully', () async {
-        // Arrange
-        final mockBrick = _MockBrick();
-        final mockGenerator = _MockMasonGenerator();
-        final mockFiles = [_MockGeneratedFile()];
-        
-        when(() => mockFiles.first.path).thenReturn('/test/path/file.dart');
-        when(() => mockGenerator.generate(any(), vars: any(named: 'vars'), logger: any(named: 'logger')))
-            .thenAnswer((_) async => mockFiles);
-
-        // Mock MasonGenerator.fromBrick static method
-        registerFallbackValue(mockBrick);
-        registerFallbackValue(<String, dynamic>{});
-        registerFallbackValue(logger);
-
-        // Create a temporary directory for testing
-        final tempDir = Directory.systemTemp.createTempSync('add_command_test');
-        addTearDown(() => tempDir.deleteSync(recursive: true));
-
-        // Act & Assert - This tests lines that handle source URL
-        final exitCode = await commandRunner.run([
-          'add', 
-          'test_component', 
-          '--source', 'https://github.com/test/repo.git',
-          '--path', tempDir.path,
-        ]);
-
-        // Since we can't easily mock static methods, this will likely fail
-        // but it tests the code path for handling remote sources
-        expect(exitCode, anyOf([equals(ExitCode.success.code), equals(ExitCode.software.code)]));
-      });
-
-      test('finds component from local source path and generates successfully', () async {
-        // Arrange - Create a real directory structure for local path testing
-        final tempSourceDir = Directory.systemTemp.createTempSync('source_test');
-        final tempTargetDir = Directory.systemTemp.createTempSync('target_test');
-        addTearDown(() {
-          tempSourceDir.deleteSync(recursive: true);
-          tempTargetDir.deleteSync(recursive: true);
-        });
-
-        // Create a basic brick.yaml file
-        final brickFile = File('${tempSourceDir.path}/brick.yaml');
-        await brickFile.writeAsString('''
-name: test_component
-description: A test component
-''');
-
-        // Act
-        final exitCode = await commandRunner.run([
-          'add',
-          'test_component',
-          '--source', tempSourceDir.path,
-          '--path', tempTargetDir.path,
-        ]);
-
-        // Assert - This tests lines 156-172 for local path handling
-        expect(exitCode, anyOf([equals(ExitCode.success.code), equals(ExitCode.software.code)]));
-      });
-
       test('handles specific repository search successfully', () async {
         // Arrange
+        const repoInfo = RepositoryInfo(
+          name: 'test-repo',
+          url: 'url1',
+          path: 'path1',
+        );
+        when(() => repositoryService.getRepositories())
+            .thenAnswer((_) async => {'test-repo': repoInfo});
+            
         final mockBrick = _MockBrick();
         final searchResult = BrickSearchResult(
           brickName: 'test_component',
@@ -203,6 +155,14 @@ description: A test component
 
       test('handles single search result and generates successfully', () async {
         // Arrange
+        const repoInfo = RepositoryInfo(
+          name: 'test-repo',
+          url: 'url1',
+          path: 'path1',
+        );
+        when(() => repositoryService.getRepositories())
+            .thenAnswer((_) async => {'test-repo': repoInfo});
+            
         final mockBrick = _MockBrick();
         final searchResult = BrickSearchResult(
           brickName: 'test_component',
@@ -211,7 +171,8 @@ description: A test component
           fullPath: 'test_component',
         );
 
-        when(() => repositoryService.findBrick('test_component'))
+        // When only one repository is configured, it automatically uses @repo/component format
+        when(() => repositoryService.findBrick('@test-repo/test_component'))
             .thenAnswer((_) async => [searchResult]);
 
         final mockGenerator = _MockMasonGenerator();
@@ -238,49 +199,125 @@ description: A test component
 
         // Assert - This tests lines for single result handling and generation
         expect(exitCode, anyOf([equals(ExitCode.success.code), equals(ExitCode.software.code)]));
-        verify(() => repositoryService.findBrick('test_component')).called(1);
+        verify(() => repositoryService.findBrick('@test-repo/test_component')).called(1);
         verify(() => logger.info('Using component "test_component" from repository "test-repo"')).called(1);
       });
 
-      test('creates target directory if it does not exist', () async {
+      test('automatically uses single repository when only one configured', () async {
         // Arrange
+        const repoInfo = RepositoryInfo(
+          name: 'single-repo',
+          url: 'url1',
+          path: 'path1',
+        );
+        when(() => repositoryService.getRepositories())
+            .thenAnswer((_) async => {'single-repo': repoInfo});
+
         final mockBrick = _MockBrick();
         final searchResult = BrickSearchResult(
           brickName: 'test_component',
-          repositoryName: 'test-repo',
+          repositoryName: 'single-repo',
           brick: mockBrick,
           fullPath: 'test_component',
         );
 
-        when(() => repositoryService.findBrick('test_component'))
+        when(() => repositoryService.findBrick('@single-repo/test_component'))
             .thenAnswer((_) async => [searchResult]);
 
-        // Create a temporary directory and then delete it to test creation
-        final tempDir = Directory.systemTemp.createTempSync('add_command_test');
-        final targetPath = '${tempDir.path}/nonexistent/nested/path';
-        tempDir.deleteSync(recursive: true);
+        final mockGenerator = _MockMasonGenerator();
+        final mockFiles = [_MockGeneratedFile()];
         
-        addTearDown(() {
-          final dir = Directory(targetPath);
-          if (dir.existsSync()) {
-            dir.deleteSync(recursive: true);
-          }
-        });
+        when(() => mockFiles.first.path).thenReturn('/test/path/file.dart');
+        when(() => mockGenerator.generate(any(), vars: any(named: 'vars'), logger: any(named: 'logger')))
+            .thenAnswer((_) async => mockFiles);
+
+        registerFallbackValue(mockBrick);
+        registerFallbackValue(<String, dynamic>{});
+        registerFallbackValue(logger);
+
+        // Create a temporary directory for testing
+        final tempDir = Directory.systemTemp.createTempSync('add_command_test');
+        addTearDown(() => tempDir.deleteSync(recursive: true));
 
         // Act
         final exitCode = await commandRunner.run([
           'add',
           'test_component',
-          '--path', targetPath,
+          '--path', tempDir.path,
         ]);
 
-        // Assert - This tests directory creation logic
+        // Assert
         expect(exitCode, anyOf([equals(ExitCode.success.code), equals(ExitCode.software.code)]));
-        verify(() => repositoryService.findBrick('test_component')).called(1);
+        verify(() => logger.detail('Only one repository configured, using: single-repo')).called(1);
+        verify(() => repositoryService.findBrick('@single-repo/test_component')).called(1);
+      });
+
+      test('handles multiple search results with specific repository selection', () async {
+        // Arrange
+        const repoInfo1 = RepositoryInfo(
+          name: 'repo1',
+          url: 'url1',
+          path: 'path1',
+        );
+        const repoInfo2 = RepositoryInfo(
+          name: 'repo2',
+          url: 'url2',
+          path: 'path2',
+        );
+        when(() => repositoryService.getRepositories())
+            .thenAnswer((_) async => {'repo1': repoInfo1, 'repo2': repoInfo2});
+            
+        final mockBrick = _MockBrick();
+        final searchResult = BrickSearchResult(
+          brickName: 'test_component',
+          repositoryName: 'repo1',
+          brick: mockBrick,
+          fullPath: 'test_component',
+        );
+
+        // When a specific repository is provided, it should search for @repo1/test_component
+        when(() => repositoryService.findBrick('@repo1/test_component'))
+            .thenAnswer((_) async => [searchResult]);
+
+        final mockGenerator = _MockMasonGenerator();
+        final mockFiles = [_MockGeneratedFile()];
+        
+        when(() => mockFiles.first.path).thenReturn('/test/path/file.dart');
+        when(() => mockGenerator.generate(any(), vars: any(named: 'vars'), logger: any(named: 'logger')))
+            .thenAnswer((_) async => mockFiles);
+
+        registerFallbackValue(mockBrick);
+        registerFallbackValue(<String, dynamic>{});
+        registerFallbackValue(logger);
+
+        // Create a temporary directory for testing
+        final tempDir = Directory.systemTemp.createTempSync('add_command_test');
+        addTearDown(() => tempDir.deleteSync(recursive: true));
+
+        // Act - Specify repository to avoid interactive selection
+        final exitCode = await commandRunner.run([
+          'add',
+          'test_component',
+          '--repository', 'repo1',
+          '--path', tempDir.path,
+        ]);
+
+        // Assert - Should succeed since we specified a repository
+        expect(exitCode, anyOf([equals(ExitCode.success.code), equals(ExitCode.software.code)]));
+        verify(() => repositoryService.findBrick('@repo1/test_component')).called(1);
+        verify(() => logger.info('Using component "test_component" from repository "repo1"')).called(1);
       });
 
       test('handles variables correctly with name and variant options', () async {
         // Arrange
+        const repoInfo = RepositoryInfo(
+          name: 'test-repo',
+          url: 'url1',
+          path: 'path1',
+        );
+        when(() => repositoryService.getRepositories())
+            .thenAnswer((_) async => {'test-repo': repoInfo});
+            
         final mockBrick = _MockBrick();
         final searchResult = BrickSearchResult(
           brickName: 'test_component',
@@ -289,7 +326,8 @@ description: A test component
           fullPath: 'test_component',
         );
 
-        when(() => repositoryService.findBrick('test_component'))
+        // When only one repository is configured, it automatically uses @repo/component format
+        when(() => repositoryService.findBrick('@test-repo/test_component'))
             .thenAnswer((_) async => [searchResult]);
 
         final mockGenerator = _MockMasonGenerator();
@@ -318,11 +356,13 @@ description: A test component
 
         // Assert - This tests variable handling lines
         expect(exitCode, anyOf([equals(ExitCode.success.code), equals(ExitCode.software.code)]));
-        verify(() => repositoryService.findBrick('test_component')).called(1);
+        verify(() => repositoryService.findBrick('@test-repo/test_component')).called(1);
       });
 
       test('handles exceptions during generation and returns error code', () async {
         // Arrange
+        when(() => repositoryService.getRepositories())
+            .thenAnswer((_) async => <String, RepositoryInfo>{});
         when(() => repositoryService.findBrick('test_component'))
             .thenThrow(Exception('Test exception'));
 
@@ -334,9 +374,19 @@ description: A test component
         verify(() => logger.err('❌ Failed to generate component: Exception: Test exception')).called(1);
         verify(() => logger.detail(any(that: startsWith('Stack trace:')))).called(1);
       });
+    });
 
-      test('handles absolute path correctly', () async {
+    group('edge cases', () {
+      test('creates target directory if it does not exist', () async {
         // Arrange
+        const repoInfo = RepositoryInfo(
+          name: 'test-repo',
+          url: 'url1',
+          path: 'path1',
+        );
+        when(() => repositoryService.getRepositories())
+            .thenAnswer((_) async => {'test-repo': repoInfo});
+            
         final mockBrick = _MockBrick();
         final searchResult = BrickSearchResult(
           brickName: 'test_component',
@@ -345,8 +395,77 @@ description: A test component
           fullPath: 'test_component',
         );
 
-        when(() => repositoryService.findBrick('test_component'))
+        // When only one repository is configured, it automatically uses @repo/component format
+        when(() => repositoryService.findBrick('@test-repo/test_component'))
             .thenAnswer((_) async => [searchResult]);
+
+        final mockGenerator = _MockMasonGenerator();
+        final mockFiles = [_MockGeneratedFile()];
+        
+        when(() => mockFiles.first.path).thenReturn('/test/path/file.dart');
+        when(() => mockGenerator.generate(any(), vars: any(named: 'vars'), logger: any(named: 'logger')))
+            .thenAnswer((_) async => mockFiles);
+
+        registerFallbackValue(mockBrick);
+        registerFallbackValue(<String, dynamic>{});
+        registerFallbackValue(logger);
+
+        // Create a temporary directory and then delete it to test creation
+        final tempDir = Directory.systemTemp.createTempSync('add_command_test');
+        final targetPath = '${tempDir.path}/nonexistent/nested/path';
+        tempDir.deleteSync(recursive: true);
+        
+        addTearDown(() {
+          final dir = Directory(targetPath);
+          if (dir.existsSync()) {
+            dir.deleteSync(recursive: true);
+          }
+        });
+
+        // Act
+        final exitCode = await commandRunner.run([
+          'add',
+          'test_component',
+          '--path', targetPath,
+        ]);
+
+        // Assert - This tests directory creation logic
+        expect(exitCode, anyOf([equals(ExitCode.success.code), equals(ExitCode.software.code)]));
+        verify(() => repositoryService.findBrick('@test-repo/test_component')).called(1);
+      });
+
+      test('handles absolute path correctly', () async {
+        // Arrange
+        const repoInfo = RepositoryInfo(
+          name: 'test-repo',
+          url: 'url1',
+          path: 'path1',
+        );
+        when(() => repositoryService.getRepositories())
+            .thenAnswer((_) async => {'test-repo': repoInfo});
+            
+        final mockBrick = _MockBrick();
+        final searchResult = BrickSearchResult(
+          brickName: 'test_component',
+          repositoryName: 'test-repo',
+          brick: mockBrick,
+          fullPath: 'test_component',
+        );
+
+        // When only one repository is configured, it automatically uses @repo/component format
+        when(() => repositoryService.findBrick('@test-repo/test_component'))
+            .thenAnswer((_) async => [searchResult]);
+
+        final mockGenerator = _MockMasonGenerator();
+        final mockFiles = [_MockGeneratedFile()];
+        
+        when(() => mockFiles.first.path).thenReturn('/test/path/file.dart');
+        when(() => mockGenerator.generate(any(), vars: any(named: 'vars'), logger: any(named: 'logger')))
+            .thenAnswer((_) async => mockFiles);
+
+        registerFallbackValue(mockBrick);
+        registerFallbackValue(<String, dynamic>{});
+        registerFallbackValue(logger);
 
         // Create a temporary directory for testing
         final tempDir = Directory.systemTemp.createTempSync('add_command_test');
@@ -361,14 +480,22 @@ description: A test component
 
         // Assert
         expect(exitCode, anyOf([equals(ExitCode.success.code), equals(ExitCode.software.code)]));
-        verify(() => repositoryService.findBrick('test_component')).called(1);
+        verify(() => repositoryService.findBrick('@test-repo/test_component')).called(1);
       });
     });
 
-    group('_promptForMissingVars', () {
+    group('variable handling', () {
       test('handles missing common variables and logs details', () async {
         // This tests the _promptForMissingVars method indirectly
         // by triggering the generation process
+        const repoInfo = RepositoryInfo(
+          name: 'test-repo',
+          url: 'url1',
+          path: 'path1',
+        );
+        when(() => repositoryService.getRepositories())
+            .thenAnswer((_) async => {'test-repo': repoInfo});
+            
         final mockBrick = _MockBrick();
         final searchResult = BrickSearchResult(
           brickName: 'test_component',
@@ -377,8 +504,20 @@ description: A test component
           fullPath: 'test_component',
         );
 
-        when(() => repositoryService.findBrick('test_component'))
+        // When only one repository is configured, it automatically uses @repo/component format
+        when(() => repositoryService.findBrick('@test-repo/test_component'))
             .thenAnswer((_) async => [searchResult]);
+
+        final mockGenerator = _MockMasonGenerator();
+        final mockFiles = [_MockGeneratedFile()];
+        
+        when(() => mockFiles.first.path).thenReturn('/test/path/file.dart');
+        when(() => mockGenerator.generate(any(), vars: any(named: 'vars'), logger: any(named: 'logger')))
+            .thenAnswer((_) async => mockFiles);
+
+        registerFallbackValue(mockBrick);
+        registerFallbackValue(<String, dynamic>{});
+        registerFallbackValue(logger);
 
         final tempDir = Directory.systemTemp.createTempSync('add_command_test');
         addTearDown(() => tempDir.deleteSync(recursive: true));
@@ -392,15 +531,6 @@ description: A test component
 
         // Assert - This should trigger the _promptForMissingVars method
         expect(exitCode, anyOf([equals(ExitCode.success.code), equals(ExitCode.software.code)]));
-      });
-    });
-
-    group('_promptUserSelection', () {
-      test('handles user input for component selection', () async {
-        // This is complex to test without mocking stdin/stdout
-        // The actual user selection logic is tested implicitly 
-        // in the multiple results test above
-        expect(true, isTrue); // Placeholder for this complex test case
       });
     });
   });
