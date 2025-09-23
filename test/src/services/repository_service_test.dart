@@ -58,7 +58,7 @@ void main() {
       expect(service, isNotNull);
     });
 
-    test('loadRepositoryConfig returns empty config when no files exist', () async {
+    test('loadRepositoryConfig returns empty config for backward compatibility', () async {
       final config = await service.loadRepositoryConfig();
       
       expect(config, isA<Map<String, dynamic>>());
@@ -66,108 +66,12 @@ void main() {
       expect((config['repositories'] as Map).isEmpty, isTrue);
     });
 
-    test('loadRepositoryConfig loads from default config file', () async {
-      // Create a default config file
-      final configFile = File('.fpx_repositories.yaml');
-      await configFile.writeAsString('''
-repositories:
-  test-repo:
-    url: https://github.com/test/repo.git
-    path: bricks
-''');
-
-      final config = await service.loadRepositoryConfig();
-      
-      expect(config['repositories'], isA<Map<String, dynamic>>());
-      final repos = config['repositories'] as Map<String, dynamic>;
-      expect(repos.containsKey('test-repo'), isTrue);
-      expect(repos['test-repo']['url'], equals('https://github.com/test/repo.git'));
-      expect(repos['test-repo']['path'], equals('bricks'));
-    });
-
-    test('loadRepositoryConfig merges default and user configs', () async {
-      // Create default config
-      final configFile = File('.fpx_repositories.yaml');
-      await configFile.writeAsString('''
-repositories:
-  default-repo:
-    url: https://github.com/default/repo.git
-    path: bricks
-''');
-
-      // Create user config
-      final userConfigFile = File('.fpx_repositories.local.yaml');
-      await userConfigFile.writeAsString('''
-repositories:
-  user-repo:
-    url: https://github.com/user/repo.git
-    path: components
-''');
-
-      final config = await service.loadRepositoryConfig();
-      
-      expect(config['repositories'], isA<Map<String, dynamic>>());
-      final repos = config['repositories'] as Map<String, dynamic>;
-      expect(repos.containsKey('default-repo'), isTrue);
-      expect(repos.containsKey('user-repo'), isTrue);
-      expect(repos['default-repo']['url'], equals('https://github.com/default/repo.git'));
-      expect(repos['user-repo']['url'], equals('https://github.com/user/repo.git'));
-    });
-
-    test('loadRepositoryConfig handles invalid yaml gracefully', () async {
-      // Create invalid YAML config
-      final configFile = File('.fpx_repositories.yaml');
-      await configFile.writeAsString('''
-repositories: [
-  invalid yaml content
-''');
-
-      final config = await service.loadRepositoryConfig();
-      
-      expect(config, isA<Map<String, dynamic>>());
-      expect(config['repositories'], isA<Map<String, dynamic>>());
-      expect((config['repositories'] as Map).isEmpty, isTrue);
-    });
-
-    test('loadRepositoryConfig handles empty file', () async {
-      // Create empty config file
-      final configFile = File('.fpx_repositories.yaml');
-      await configFile.writeAsString('');
-
-      final config = await service.loadRepositoryConfig();
-      
-      expect(config, isA<Map<String, dynamic>>());
-      expect(config['repositories'], isA<Map<String, dynamic>>());
-      expect((config['repositories'] as Map).isEmpty, isTrue);
-    });
-
-    test('loadRepositoryConfig handles non-map yaml content', () async {
-      // Create non-map YAML config
-      final configFile = File('.fpx_repositories.yaml');
-      await configFile.writeAsString('''
-- item1
-- item2
-''');
-
-      final config = await service.loadRepositoryConfig();
-      
-      expect(config, isA<Map<String, dynamic>>());
-      expect(config['repositories'], isA<Map<String, dynamic>>());
-      expect((config['repositories'] as Map).isEmpty, isTrue);
-    });
-
-    test('getRepositories returns repository info from config', () async {
-      // Create config with repositories
-      final configFile = File('.fpx_repositories.yaml');
-      await configFile.writeAsString('''
-repositories:
-  repo1:
-    url: https://github.com/repo1/repo.git
-    path: bricks
-  repo2:
-    url: https://github.com/repo2/repo.git
-    path: components
-''');
+    test('getRepositories returns info from directory structure', () async {
+      // Create some repository directories
+      final repo1Dir = Directory('.fpx_repositories/repo1');
+      await repo1Dir.create(recursive: true);
+      final repo2Dir = Directory('.fpx_repositories/repo2');
+      await repo2Dir.create(recursive: true);
 
       final repositories = await service.getRepositories();
       
@@ -177,39 +81,18 @@ repositories:
       
       final repo1 = repositories['repo1']!;
       expect(repo1.name, equals('repo1'));
-      expect(repo1.url, equals('https://github.com/repo1/repo.git'));
-      expect(repo1.path, equals('bricks'));
+      expect(repo1.url, equals('')); // URL not available from directory structure
+      expect(repo1.path, equals('bricks')); // Default path
       
       final repo2 = repositories['repo2']!;
       expect(repo2.name, equals('repo2'));
-      expect(repo2.url, equals('https://github.com/repo2/repo.git'));
-      expect(repo2.path, equals('components'));
+      expect(repo2.url, equals(''));
+      expect(repo2.path, equals('bricks'));
     });
 
     test('getRepositories returns empty map when no repositories configured', () async {
       final repositories = await service.getRepositories();
       expect(repositories.isEmpty, isTrue);
-    });
-
-    test('saveRepositoryConfig writes config to default file', () async {
-      final config = {
-        'repositories': {
-          'new-repo': {
-            'url': 'https://github.com/new/repo.git',
-            'path': 'widgets',
-          },
-        },
-      };
-
-      await service.saveRepositoryConfig(config);
-
-      final configFile = File('.fpx_repositories.yaml');
-      expect(await configFile.exists(), isTrue);
-      
-      final content = await configFile.readAsString();
-      expect(content.contains('new-repo'), isTrue);
-      expect(content.contains('https://github.com/new/repo.git'), isTrue);
-      expect(content.contains('widgets'), isTrue);
     });
 
     test('isRepositoryCloned returns false for non-existent repository', () async {
@@ -279,74 +162,19 @@ variables:
       expect(results.isEmpty, isTrue);
     });
 
-    test('detectComponents returns empty list for non-existent repository', () async {
-      final components = await service.detectComponents('non-existent-repo');
+    test('scanForBricks returns empty list for non-existent repository', () async {
+      final components = await service.scanForBricks('non-existent-repo');
       expect(components.isEmpty, isTrue);
     });
 
-    group('loadRepositoryConfig edge cases', () {
-      test('handles default config with repositories as non-Map', () async {
-        // Create default config with repositories as a list instead of map
-        final configFile = File('.fpx_repositories.yaml');
-        await configFile.writeAsString('''
-repositories:
-  - item1
-  - item2
-''');
-
-        final config = await service.loadRepositoryConfig();
-        
-        expect(config['repositories'], isA<Map<String, dynamic>>());
-        expect((config['repositories'] as Map).isEmpty, isTrue);
-      });
-
-      test('handles user config with empty repositories', () async {
-        // Create user config with null repositories
-        final userConfigFile = File('.fpx_repositories.local.yaml');
-        await userConfigFile.writeAsString('''
-repositories:
-''');
-
-        final config = await service.loadRepositoryConfig();
-        expect(config['repositories'], isA<Map<String, dynamic>>());
-      });
-
-      test('handles user config file read error', () async {
-        // Create user config file with invalid permissions or content that causes read error
-        final userConfigFile = File('.fpx_repositories.local.yaml');
-        await userConfigFile.writeAsString('''
-invalid: [
-  yaml: content
-''');
-
-        final config = await service.loadRepositoryConfig();
-        expect(config['repositories'], isA<Map<String, dynamic>>());
-      });
-    });
-
     group('findBrick', () {
-      test('returns empty list when repositories is null', () async {
-        // Create config with no repositories section
-        final configFile = File('.fpx_repositories.yaml');
-        await configFile.writeAsString('''
-other_config: value
-''');
-
+      test('returns empty list when no repositories configured', () async {
         final results = await service.findBrick('test-brick');
         expect(results.isEmpty, isTrue);
       });
 
       test('handles specific repository format @repo/brick', () async {
-        // Create config with test repository
-        final configFile = File('.fpx_repositories.yaml');
-        await configFile.writeAsString('''
-repositories:
-  test-repo:
-    url: https://github.com/test/repo.git
-    path: bricks
-''');
-
-        // Create fake repository directory with component
+        // Create repository directory with component
         final repoDir = Directory('.fpx_repositories/test-repo');
         await repoDir.create(recursive: true);
         
@@ -369,28 +197,16 @@ description: A button component
       });
 
       test('handles specific repository format with invalid parts', () async {
-        final configFile = File('.fpx_repositories.yaml');
-        await configFile.writeAsString('''
-repositories:
-  test-repo:
-    url: https://github.com/test/repo.git
-    path: bricks
-''');
+        // Create repository directory
+        final repoDir = Directory('.fpx_repositories/test-repo');
+        await repoDir.create(recursive: true);
 
         // Test with invalid format (only @repo)
         final results = await service.findBrick('@test-repo');
         expect(results.isEmpty, isTrue);
       });
 
-      test('handles repository not found in config', () async {
-        final configFile = File('.fpx_repositories.yaml');
-        await configFile.writeAsString('''
-repositories:
-  other-repo:
-    url: https://github.com/other/repo.git
-    path: bricks
-''');
-
+      test('handles repository not found', () async {
         final results = await service.findBrick('@missing-repo/button');
         expect(results.isEmpty, isTrue);
       });
@@ -679,7 +495,7 @@ invalid: [
       });
     });
 
-    group('detectComponents', () {
+    group('scanForBricks', () {
       test('scans for brick.yaml files when no fpx.yaml', () async {
         // Create repository directory without fpx.yaml
         final repoDir = Directory('.fpx_repositories/test-repo');
@@ -696,46 +512,9 @@ invalid: [
         final brick2File = File('.fpx_repositories/test-repo/widgets/card/brick.yaml');
         await brick2File.writeAsString('name: card');
 
-        final components = await service.detectComponents('test-repo');
+        final components = await service.scanForBricks('test-repo');
         expect(components.contains('button'), isTrue);
         expect(components.contains('card'), isTrue);
-      });
-
-      test('handles fpx.yaml with bricks section for backward compatibility', () async {
-        final repoDir = Directory('.fpx_repositories/test-repo');
-        await repoDir.create(recursive: true);
-        
-        final fpxFile = File('.fpx_repositories/test-repo/fpx.yaml');
-        await fpxFile.writeAsString('''
-bricks:
-  legacy_button:
-    path: lib/src/components
-  legacy_card:
-    path: lib/src/widgets
-''');
-
-        final components = await service.detectComponents('test-repo');
-        expect(components.contains('legacy_button'), isTrue);
-        expect(components.contains('legacy_card'), isTrue);
-      });
-
-      test('combines components and bricks sections', () async {
-        final repoDir = Directory('.fpx_repositories/test-repo');
-        await repoDir.create(recursive: true);
-        
-        final fpxFile = File('.fpx_repositories/test-repo/fpx.yaml');
-        await fpxFile.writeAsString('''
-components:
-  modern_button:
-    path: lib/src/components
-bricks:
-  legacy_card:
-    path: lib/src/widgets
-''');
-
-        final components = await service.detectComponents('test-repo');
-        expect(components.contains('modern_button'), isTrue);
-        expect(components.contains('legacy_card'), isTrue);
       });
 
       test('skips brick.yaml files in root directory', () async {
@@ -752,7 +531,7 @@ bricks:
         final validBrickFile = File('.fpx_repositories/test-repo/components/button/brick.yaml');
         await validBrickFile.writeAsString('name: button');
 
-        final components = await service.detectComponents('test-repo');
+        final components = await service.scanForBricks('test-repo');
         expect(components.contains('button'), isTrue);
         expect(components.contains('root'), isFalse);
       });
@@ -772,7 +551,7 @@ bricks:
         final file2 = File('.fpx_repositories/test-repo/path2/button/brick.yaml');
         await file2.writeAsString('name: button');
 
-        final components = await service.detectComponents('test-repo');
+        final components = await service.scanForBricks('test-repo');
         expect(components.where((c) => c == 'button').length, equals(1));
       });
     });
@@ -820,122 +599,36 @@ components:
       });
     });
 
-    group('YAML conversion methods', () {
-      test('_convertYamlMapToMap handles nested structures', () async {
-        final configFile = File('.fpx_repositories.yaml');
-        await configFile.writeAsString('''
-repositories:
-  test-repo:
-    url: https://github.com/test/repo.git
-    path: bricks
-    config:
-      nested:
-        value: test
-      list:
-        - item1
-        - item2
-        - nested_list:
-            - sub_item1
-            - sub_item2
-''');
-
-        final config = await service.loadRepositoryConfig();
-        final repos = config['repositories'] as Map<String, dynamic>;
-        final testRepo = repos['test-repo'] as Map<String, dynamic>;
-        final configSection = testRepo['config'] as Map<String, dynamic>;
-        
-        expect(configSection['nested'], isA<Map<String, dynamic>>());
-        expect(configSection['list'], isA<List<dynamic>>());
-        
-        final list = configSection['list'] as List<dynamic>;
-        expect(list[2], isA<Map<String, dynamic>>());
-        final nestedListMap = list[2] as Map<String, dynamic>;
-        expect(nestedListMap['nested_list'], isA<List<dynamic>>());
-      });
-    });
-
-    group('_mapToYaml method', () {
-      test('generates proper YAML structure', () async {
-        final config = {
-          'repositories': {
-            'test-repo': {
-              'url': 'https://github.com/test/repo.git',
-              'path': 'bricks',
-              'nested': {
-                'value': 'test',
-              },
-            },
-          },
-        };
-
-        await service.saveRepositoryConfig(config);
-
-        final configFile = File('.fpx_repositories.yaml');
-        final content = await configFile.readAsString();
-        
-        expect(content, contains('repositories:'));
-        expect(content, contains('  test-repo:'));
-        expect(content, contains('    url: https://github.com/test/repo.git'));
-        expect(content, contains('    path: bricks'));
-        expect(content, contains('    nested:'));
-        expect(content, contains('      value: test'));
-      });
-    });
-
     group('getAllAvailableComponents', () {
       test('returns empty map when no repositories configured', () async {
         final allComponents = await service.getAllAvailableComponents();
         expect(allComponents.isEmpty, isTrue);
       });
 
-      test('returns empty map when repositories is null', () async {
-        final configFile = File('.fpx_repositories.yaml');
-        await configFile.writeAsString('''
-other_config: value
-''');
-
+      test('returns empty map when no repository directories exist', () async {
         final allComponents = await service.getAllAvailableComponents();
         expect(allComponents.isEmpty, isTrue);
       });
 
       test('handles repository access errors gracefully', () async {
-        final configFile = File('.fpx_repositories.yaml');
-        await configFile.writeAsString('''
-repositories:
-  error-repo:
-    url: https://github.com/error/repo.git
-    path: bricks
-''');
-
-        // Don't create the repository directory to trigger error
+        // This test passes because getAllAvailableComponents only operates on
+        // directories that exist, so non-existent directories are simply skipped
         final allComponents = await service.getAllAvailableComponents();
         expect(allComponents.isEmpty, isTrue);
       });
 
       test('returns components from successfully accessed repositories', () async {
-        final configFile = File('.fpx_repositories.yaml');
-        await configFile.writeAsString('''
-repositories:
-  good-repo:
-    url: https://github.com/good/repo.git
-    path: bricks
-  bad-repo:
-    url: https://github.com/bad/repo.git
-    path: bricks
-''');
-
-        // Create one repository with components
+        // Create one repository with brick.yaml files
         final goodRepo = Directory('.fpx_repositories/good-repo');
         await goodRepo.create(recursive: true);
         
-        final fpxFile = File('.fpx_repositories/good-repo/fpx.yaml');
-        await fpxFile.writeAsString('''
-components:
-  button:
-    path: lib/src/components
-''');
+        // Create brick.yaml files that scanForBricks can find
+        final buttonDir = Directory('.fpx_repositories/good-repo/components/button');
+        await buttonDir.create(recursive: true);
+        final buttonBrick = File('.fpx_repositories/good-repo/components/button/brick.yaml');
+        await buttonBrick.writeAsString('name: button');
 
-        // Don't create bad-repo to trigger error for that one
+        // Don't create bad-repo to show that only existing repos are scanned
 
         final allComponents = await service.getAllAvailableComponents();
         expect(allComponents.containsKey('good-repo'), isTrue);
