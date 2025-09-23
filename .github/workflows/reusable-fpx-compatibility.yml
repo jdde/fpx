@@ -7,15 +7,6 @@ on:
         description: 'Name of the component to test for fpx compatibility'
         required: true
         type: string
-      flutter_version:
-        description: 'Flutter version to use'
-        required: false
-        type: string
-        default: ''
-      repository_name:
-        description: 'Name to use for the repository (optional, will be auto-generated if not provided)'
-        required: false
-        type: string
 
 jobs:
   ensure-fpx-compatibility:
@@ -25,12 +16,11 @@ jobs:
       - name: Checkout component repository
         uses: actions/checkout@v4
 
-      - name: Setup Flutter
+      - name: Setup flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: ${{ inputs.flutter_version || '' }}
-          channel: stable
-          
+            channel: stable
+
       - name: Install fpx globally
         run: dart pub global activate fpx
 
@@ -55,11 +45,7 @@ jobs:
       - name: Add component repository to fpx
         run: |
           cd test_project
-          if [ -n "${{ inputs.repository_name }}" ]; then
-            fpx repository add --name "${{ inputs.repository_name }}" --url "${{ steps.get_repo_url.outputs.repository_url }}"
-          else
-            fpx repository add --url "${{ steps.get_repo_url.outputs.repository_url }}"
-          fi
+          fpx repository add --url "${{ steps.get_repo_url.outputs.repository_url }}"
 
       - name: List available components
         run: |
@@ -181,7 +167,6 @@ jobs:
           echo "**Component:** ${{ inputs.component_name }}" >> fpx_compatibility_report.md
           echo "**Repository:** ${{ github.repository }}" >> fpx_compatibility_report.md
           echo "**Commit:** ${{ github.sha }}" >> fpx_compatibility_report.md
-          echo "**Flutter Version:** ${{ inputs.flutter_version || 'stable (latest)' }}" >> fpx_compatibility_report.md
           echo "" >> fpx_compatibility_report.md
           
           if [ "${{ steps.add_component.outcome }}" = "success" ]; then
