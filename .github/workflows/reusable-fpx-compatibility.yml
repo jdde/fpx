@@ -11,7 +11,7 @@ on:
         description: 'Flutter version to use'
         required: false
         type: string
-        default: 'stable'
+        default: ''
       repository_name:
         description: 'Name to use for the repository (optional, will be auto-generated if not provided)'
         required: false
@@ -28,7 +28,7 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: ${{ inputs.flutter_version }}
+          flutter-version: ${{ inputs.flutter_version || '' }}
           channel: stable
           
       - name: Install fpx globally
@@ -181,7 +181,7 @@ jobs:
           echo "**Component:** ${{ inputs.component_name }}" >> fpx_compatibility_report.md
           echo "**Repository:** ${{ github.repository }}" >> fpx_compatibility_report.md
           echo "**Commit:** ${{ github.sha }}" >> fpx_compatibility_report.md
-          echo "**Flutter Version:** ${{ inputs.flutter_version }}" >> fpx_compatibility_report.md
+          echo "**Flutter Version:** ${{ inputs.flutter_version || 'stable (latest)' }}" >> fpx_compatibility_report.md
           echo "" >> fpx_compatibility_report.md
           
           if [ "${{ steps.add_component.outcome }}" = "success" ]; then
