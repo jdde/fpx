@@ -60,12 +60,23 @@ class AddCommand extends Command<int> {
     }
 
     final component = argResults!.rest.first;
-    final specificRepository = argResults!['repository'] as String?;
+    String? specificRepository = argResults!['repository'] as String?;
+    
+    // Get target directory early
+    final targetPath = argResults!['path'] as String;
+    
+    // When there is only one repository configured, set parameter to that name
+    final repositories = await _repositoryService.getRepositories();
+    if (repositories.length == 1 && specificRepository == null) {
+      specificRepository = repositories.keys.first;
+      _logger.detail('Only one repository configured, using: $specificRepository');
+    }
+    
 
     try {
       // Search for the component in repositories
       final searchResults = await _findComponentInRepositories(component, specificRepository);
-      
+
       if (searchResults.isEmpty) {
         final repositories = await _repositoryService.getRepositories();
         if (repositories.isEmpty) {
@@ -73,14 +84,44 @@ class AddCommand extends Command<int> {
             '❌ Component "$component" not found. No repositories configured.\n'
             'Add a repository with: fpx repository add --name <name> --url <url>',
           );
+          return ExitCode.usage.code;
         } else {
           final repoList = repositories.keys.join(', ');
           _logger.err(
-            '❌ Component "$component" not found in configured repositories: $repoList\n'
-            'Try using --repository option to specify a specific repository.',
+            '❌ Component "$component" not found in configured repositories: $repoList',
           );
+          
+          // Get all available components from all repositories
+          final availableComponents = await _getAllAvailableComponents(specificRepository);
+          
+          if (availableComponents.isNotEmpty) {
+            _logger.info('\n📋 Available components:');
+            for (var i = 0; i < availableComponents.length; i++) {
+              final componentInfo = availableComponents[i];
+              _logger.info('  ${i + 1}. ${componentInfo.repositoryName}/${componentInfo.componentName}');
+            }
+            _logger.info('  0. Cancel');
+            
+            // Prompt user to select from available components
+            final selectedComponent = await _promptUserSelectionFromAvailable(availableComponents);
+            if (selectedComponent != null) {
+              // Recursively call with the selected component
+              _logger.info('Using selected component: ${selectedComponent.repositoryName}/${selectedComponent.componentName}');
+              final selectedSearchResults = await _findComponentInRepositories(
+                selectedComponent.componentName, 
+                selectedComponent.repositoryName
+              );
+              if (selectedSearchResults.isNotEmpty) {
+                final selectedResult = selectedSearchResults.first;
+                return await _generateComponent(selectedResult, targetPath);
+              }
+            }
+          } else {
+            _logger.info('No components found in configured repositories.');
+          }
+          
+          return ExitCode.usage.code;
         }
-        return ExitCode.usage.code;
       }
 
       // If multiple results and no specific repository chosen, let user select
@@ -101,43 +142,7 @@ class AddCommand extends Command<int> {
             'Using component "${selectedResult.brickName}" from repository "${selectedResult.repositoryName}"');
       }
 
-      // Get target directory
-      final targetPath = argResults!['path'] as String;
-      final targetDirectory = Directory(path.isAbsolute(targetPath)
-          ? targetPath
-          : path.join(Directory.current.path, targetPath));
-
-      if (!await targetDirectory.exists()) {
-        await targetDirectory.create(recursive: true);
-      }
-
-      // Create generator from brick
-      final generator = await MasonGenerator.fromBrick(selectedResult.brick);
-
-      // Create variables map from parsed arguments
-      final vars = <String, dynamic>{};
-      if (argResults!['name'] != null) vars['name'] = argResults!['name'];
-      if (argResults!['variant'] != null)
-        vars['variant'] = argResults!['variant'];
-
-      // Add component name as default variable
-      vars['component'] = component;
-
-      // Prompt for any missing required variables
-      await _promptForMissingVars(generator, vars);
-
-      // Generate the component
-      final target = DirectoryGeneratorTarget(targetDirectory);
-      final files =
-          await generator.generate(target, vars: vars, logger: _logger);
-
-      _logger.success('✅ Successfully generated $component component!');
-      _logger.info('Generated ${files.length} file(s):');
-      for (final file in files) {
-        _logger.detail('  ${file.path}');
-      }
-
-      return ExitCode.success.code;
+      return await _generateComponent(selectedResult, targetPath);
     } catch (e, stackTrace) {
       _logger.err('❌ Failed to generate component: $e');
       _logger.detail('Stack trace: $stackTrace');
@@ -150,35 +155,6 @@ class AddCommand extends Command<int> {
     String component,
     String? specificRepository,
   ) async {
-    // If source is provided, handle it separately (legacy behavior)
-    final source = argResults!['source'] as String?;
-    if (source != null) {
-      if (source.startsWith('http') || source.contains('github.com')) {
-        // Handle remote Git repository
-        _logger.info('Fetching brick from remote source: $source');
-        final brick = Brick.git(GitPath(source));
-        return [
-          BrickSearchResult(
-            brickName: component,
-            repositoryName: 'remote',
-            brick: brick,
-            fullPath: component,
-          )
-        ];
-      } else if (await Directory(source).exists()) {
-        // Handle local path
-        final brick = Brick.path(source);
-        return [
-          BrickSearchResult(
-            brickName: component,
-            repositoryName: 'local',
-            brick: brick,
-            fullPath: component,
-          )
-        ];
-      }
-    }
-
     // Search in configured repositories
     List<BrickSearchResult> searchResults;
     if (specificRepository != null) {
@@ -190,28 +166,6 @@ class AddCommand extends Command<int> {
     }
 
     return searchResults;
-  }
-
-  Future<void> _promptForMissingVars(
-    MasonGenerator generator,
-    Map<String, dynamic> vars,
-  ) async {
-    // Get brick variables from the generator
-    try {
-      // For Mason generators, we can't easily access brick variables at runtime
-      // So we'll just warn about common missing variables
-      final commonVars = ['name', 'description', 'component'];
-
-      for (final varName in commonVars) {
-        if (!vars.containsKey(varName)) {
-          _logger.detail(
-              'Variable $varName not provided, using defaults if available');
-        }
-      }
-    } catch (e) {
-      // If we can't read brick variables, continue with provided vars
-      _logger.detail('Could not read brick variables: $e');
-    }
   }
 
   Future<BrickSearchResult> _promptUserSelection(
@@ -246,4 +200,145 @@ class AddCommand extends Command<int> {
       return searchResults[selection - 1];
     }
   }
+
+  /// Generate component from selected brick and target path
+  Future<int> _generateComponent(BrickSearchResult selectedResult, String targetPath) async {
+    // Import path for generating relative paths
+    final targetDirectory = Directory(path.isAbsolute(targetPath)
+        ? targetPath
+        : path.join(Directory.current.path, targetPath));
+
+    if (!await targetDirectory.exists()) {
+      await targetDirectory.create(recursive: true);
+    }
+
+    // Create generator from brick
+    final generator = await MasonGenerator.fromBrick(selectedResult.brick);
+
+    // Create variables map from parsed arguments
+    final vars = <String, dynamic>{};
+    if (argResults!['name'] != null) vars['name'] = argResults!['name'];
+    if (argResults!['variant'] != null)
+      vars['variant'] = argResults!['variant'];
+
+    // Add component name as default variable
+    vars['component'] = selectedResult.brickName;
+
+    // Prompt for any missing required variables
+    await _promptForMissingVars(generator, vars);
+
+    // Generate the component
+    final target = DirectoryGeneratorTarget(targetDirectory);
+    final files =
+        await generator.generate(target, vars: vars, logger: _logger);
+
+    _logger.success('✅ Successfully generated ${selectedResult.brickName} component!');
+    _logger.info('Generated ${files.length} file(s):');
+    for (final file in files) {
+      _logger.info('  ${file.path}');
+    }
+
+    return ExitCode.success.code;
+  }
+
+  /// Get all available components from repositories
+  Future<List<ComponentInfo>> _getAllAvailableComponents(String? specificRepository) async {
+    final repositories = await _repositoryService.getRepositories();
+    final components = <ComponentInfo>[];
+
+    for (final entry in repositories.entries) {
+      final repoName = entry.key;
+      
+      // If specific repository is requested, filter by that
+      if (specificRepository != null && repoName != specificRepository) {
+        continue;
+      }
+
+      try {
+        final availableComponents = await _repositoryService.scanForBricks(repoName);
+        for (final componentName in availableComponents) {
+          components.add(ComponentInfo(
+            componentName: componentName,
+            repositoryName: repoName,
+          ));
+        }
+      } catch (e) {
+        _logger.detail('Failed to scan repository $repoName: $e');
+        // Continue with other repositories
+      }
+    }
+
+    return components;
+  }
+
+  /// Prompt user to select from available components
+  Future<ComponentInfo?> _promptUserSelectionFromAvailable(
+      List<ComponentInfo> availableComponents) async {
+    while (true) {
+      stdout.write(
+          '\nPlease select a component (1-${availableComponents.length}, or 0 to cancel): ');
+      final input = stdin.readLineSync();
+
+      if (input == null || input.trim().isEmpty) {
+        _logger.err('Please enter a valid selection.');
+        continue;
+      }
+
+      final selection = int.tryParse(input.trim());
+      if (selection == null) {
+        _logger.err('Invalid input. Please enter a number.');
+        continue;
+      }
+
+      if (selection == 0) {
+        _logger.info('Operation cancelled.');
+        return null;
+      }
+
+      if (selection < 1 || selection > availableComponents.length) {
+        _logger.err(
+            'Invalid selection. Please enter a number between 1 and ${availableComponents.length}, or 0 to cancel.');
+        continue;
+      }
+
+      return availableComponents[selection - 1];
+    }
+  }
+
+  Future<void> _promptForMissingVars(
+    MasonGenerator generator,
+    Map<String, dynamic> vars,
+  ) async {
+    // Get brick variables from the generator
+    try {
+      // For Mason generators, we can't easily access brick variables at runtime
+      // So we'll just warn about common missing variables
+      final commonVars = ['name', 'description', 'component'];
+
+      for (final varName in commonVars) {
+        if (!vars.containsKey(varName)) {
+          _logger.detail(
+              'Variable $varName not provided, using defaults if available');
+        }
+      }
+    } catch (e) {
+      // If we can't read brick variables, continue with provided vars
+      _logger.detail('Could not read brick variables: $e');
+    }
+  }
+}
+
+/// Information about an available component
+class ComponentInfo {
+  /// Component name
+  final String componentName;
+  
+  /// Repository name where the component is located
+  final String repositoryName;
+
+  /// Constructor
+  ComponentInfo({
+    required this.componentName,
+    required this.repositoryName,
+  });
 }

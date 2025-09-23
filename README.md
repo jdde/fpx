@@ -8,15 +8,19 @@
 
 CLI template by the [Very Good CLI][very_good_cli_link] 🤖
 
-Lightweight Widget paste CLI with support for remote brick repositories.
 
-### Features
+**fpx** (Flutter Paste X) is a copy & paste component system inspired by shadcn/ui for Flutter. Unlike traditional packages, fpx copies individual components directly into your project, giving you full control to customize and modify them without being locked into a specific design system or dependency chain.
 
-- 🧱 **Mason Brick Management**: Paste Mason bricks locally
-- 📦 **Repository Support**: Add and manage remote brick repositories  
-- 🔄 **Auto-detection**: Automatically parses GitHub repository structures
-- ⚡ **Fast Setup**: Quick initialization and brick listing
-- 🎯 **Widget Focused**: Single-Command Widget pasting
+Copy & paste Flutter components from any compatible repository into your project. No package dependencies, full customization, automatic dependency resolution.
+
+### Key Benefits
+
+- 🎯 **Copy, don't install** - Components become part of your codebase
+- �️ **Full customization** - Modify components to match your exact needs  
+- 🔧 **Dependency-free** - No external package dependencies to manage
+- � **Automatic resolution** - fpx handles component dependencies and foundation files automatically
+- ⚡ **Fast Setup** - Quick initialization and component listing
+- � **Widget Focused** - Optimized for Flutter component workflows
 
 ---
 
@@ -41,25 +45,28 @@ dart pub global activate --source=path .
 Get started in 2 simple steps:
 
 ```sh
-# 1. Add the unping-ui repository (contains pre-built Flutter widgets)
+# 1. Add the unping-ui repository (contains pre-built Flutter components)
 $ fpx repository add --url https://github.com/unping/unping-ui --name unping-ui
 
-# 2. Add a button widget to your project (mason.yaml will be created automatically)
-$ fpx add button --name my_awesome_button
+# 2. Add a component to your project 
+$ fpx add base_button
 ```
 
-That's it! FPX automatically creates the necessary configuration files and you now have a button widget ready to use in your Flutter project.
+That's it! fpx automatically copies the component and its dependencies directly into your project, ready to use and customize.
 
 ## Usage
 
 ```sh
-# Add a component (requires mason.yaml configuration)
-$ fpx add button --name my_button
+# Add a component
+$ fpx add base_button
 
-# List available bricks
+# Add a component with variant
+$ fpx add base_button --variant outlined
+
+# List available components
 $ fpx list
 
-# Update bricks from repositories
+# Update components from repositories
 $ fpx update
 
 # Repository Management
@@ -76,7 +83,7 @@ $ fpx --help
 
 ## Repository Management 📦
 
-FPX supports managing remote brick repositories to access a wider variety of Mason bricks beyond your local configuration.
+fpx supports managing remote component repositories to access a wide variety of Flutter components beyond your local setup.
 
 ### Adding Repositories
 
@@ -90,10 +97,10 @@ $ fpx repository add --url https://github.com/unping/unping-ui
 $ fpx repository add --url https://github.com/unping/unping-ui --name unping-ui
 ```
 
-The CLI automatically detects GitHub repository structures and extracts the appropriate path to bricks. For GitHub URLs, it will:
-- Parse tree/branch paths (e.g., `https://github.com/owner/repo/tree/main/bricks`)
-- Extract the correct Git URL and bricks path
-- Default to `bricks/` folder if no specific path is detected
+The CLI automatically detects GitHub repository structures and extracts the appropriate path to components. For GitHub URLs, it will:
+- Parse tree/branch paths (e.g., `https://github.com/owner/repo/tree/main/lib/src/components`)
+- Extract the correct Git URL and components path
+- Default to `lib/src/components/` folder if no specific path is detected
 
 ### Listing Repositories
 
@@ -103,31 +110,89 @@ View all configured repositories:
 $ fpx repository list
 ```
 
-This shows each repository's name, Git URL, and the path to bricks within the repository.
+This shows each repository's name, Git URL, and the path to components within the repository.
 
 ### Removing Repositories
 
 Remove a repository by its name/alias:
 
 ```sh
-$ fpx repository remove --name mason-bricks
+$ fpx repository remove --name unping-ui
 ```
 
 ### Configuration
 
-Repository configurations are stored in `fpx_repositories.yaml` in your current directory. This file is automatically created and managed by the CLI. Example structure:
+Repository configurations are stored in `.fpx_repositories.yaml` in your current directory. This file is automatically created and managed by the CLI. Example structure:
 
 ```yaml
 # fpx repository configuration
-# This file manages remote repositories for unping-UI
+# This file manages remote repositories for Flutter components
 repositories:
   unping-ui:
     url: https://github.com/unping/unping-ui.git
-    path: bricks
+    path: lib/src/components
   my-widgets:
     url: https://github.com/username/flutter-widgets.git
-    path: mason_bricks
+    path: lib/src/components
 ```
+
+## Creating Component Libraries 📚
+
+Want to make your component library fpx-compatible? Here's how to set it up:
+
+### 1. Create fpx.yaml Configuration
+
+Add an `fpx.yaml` file to your repository root:
+
+```yaml
+components:
+  path: lib/src/components
+variables:
+  foundation:
+    color:
+      path: lib/src/foundation/ui_colors.dart
+    spacing:
+      path: lib/src/foundation/ui_spacing.dart
+    text_styles:
+      path: lib/src/foundation/ui_text_styles.dart
+    radius:
+      path: lib/src/foundation/ui_radius.dart
+```
+
+This configuration tells fpx:
+- Where to find your components (`components.path`)
+- Where foundation files are located (`variables.foundation`)
+- How to resolve dependencies between components
+
+### 2. Example Folder structure for given yaml structure
+
+This is an example structure! Just the paths in the fpx.yaml need to be correct.
+
+```
+lib/
+  src/
+    components/
+      my_button/
+        my_button.dart      # Main component file
+      my_badge/
+        my_badge.dart
+    foundation/
+      ui_colors.dart        # Color definitions
+      ui_spacing.dart       # Spacing constants
+      ui_text_styles.dart   # Typography styles
+      ui_radius.dart        # Border radius values
+```
+
+### 3. Make Your Library Available
+
+Users can then add your repository to fpx:
+
+```sh
+fpx repository add --url https://github.com/your-org/your-ui-lib --name your-ui-lib
+fpx add my_button
+```
+
+The components will be copied directly into their project, ready to use and customize!
 
 ## Contributing 🤝
 
@@ -142,6 +207,3 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 [coverage_badge]: coverage_badge.svg
 [license_badge]: https://img.shields.io/badge/license-MIT-blue.svg
 [license_link]: https://opensource.org/licenses/MIT
-[very_good_analysis_badge]: https://img.shields.io/badge/style-very_good_analysis-B22C89.svg
-[very_good_analysis_link]: https://pub.dev/packages/very_good_analysis
-[very_good_cli_link]: https://github.com/VeryGoodOpenSource/very_good_cli
