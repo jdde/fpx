@@ -68,9 +68,9 @@ void main() {
 
     test('getRepositories returns info from directory structure', () async {
       // Create some repository directories
-      final repo1Dir = Directory('.fpx_repositories/repo1');
+      final repo1Dir = Directory('${RepositoryService.repositoriesDir}/repo1');
       await repo1Dir.create(recursive: true);
-      final repo2Dir = Directory('.fpx_repositories/repo2');
+      final repo2Dir = Directory('${RepositoryService.repositoriesDir}/repo2');
       await repo2Dir.create(recursive: true);
 
       final repositories = await service.getRepositories();
@@ -102,7 +102,7 @@ void main() {
 
     test('isRepositoryCloned returns true for existing repository', () async {
       // Create a fake repository directory
-      final repoDir = Directory('.fpx_repositories/test-repo');
+      final repoDir = Directory('${RepositoryService.repositoriesDir}/test-repo');
       await repoDir.create(recursive: true);
 
       final result = await service.isRepositoryCloned('test-repo');
@@ -111,7 +111,7 @@ void main() {
 
     test('getRepositoryPath returns correct path', () {
       final result = service.getRepositoryPath('test-repo');
-      final expected = path.join('.fpx_repositories', 'test-repo');
+      final expected = path.join(RepositoryService.repositoriesDir, 'test-repo');
       expect(result, equals(expected));
     });
 
@@ -122,7 +122,7 @@ void main() {
 
     test('readFpxConfig returns null for repository without fpx.yaml', () async {
       // Create repository directory without fpx.yaml
-      final repoDir = Directory('.fpx_repositories/test-repo');
+      final repoDir = Directory('${RepositoryService.repositoriesDir}/test-repo');
       await repoDir.create(recursive: true);
 
       final config = await service.readFpxConfig('test-repo');
@@ -131,10 +131,10 @@ void main() {
 
     test('readFpxConfig returns config when fpx.yaml exists', () async {
       // Create repository directory with fpx.yaml
-      final repoDir = Directory('.fpx_repositories/test-repo');
+      final repoDir = Directory('${RepositoryService.repositoriesDir}/test-repo');
       await repoDir.create(recursive: true);
       
-      final fpxFile = File('.fpx_repositories/test-repo/fpx.yaml');
+      final fpxFile = File('${RepositoryService.repositoriesDir}/test-repo/fpx.yaml');
       await fpxFile.writeAsString('''
 components:
   button:
@@ -175,19 +175,19 @@ variables:
 
       test('handles specific repository format @repo/brick', () async {
         // Create repository directory with component
-        final repoDir = Directory('.fpx_repositories/test-repo');
+        final repoDir = Directory('${RepositoryService.repositoriesDir}/test-repo');
         await repoDir.create(recursive: true);
         
-        final componentDir = Directory('.fpx_repositories/test-repo/lib/src/components/button');
+        final componentDir = Directory('${RepositoryService.repositoriesDir}/test-repo/lib/src/components/button');
         await componentDir.create(recursive: true);
         
-        final brickYaml = File('.fpx_repositories/test-repo/lib/src/components/button/brick.yaml');
+        final brickYaml = File('${RepositoryService.repositoriesDir}/test-repo/lib/src/components/button/brick.yaml');
         await brickYaml.writeAsString('''
 name: button
 description: A button component
 ''');
         
-        final brickDir = Directory('.fpx_repositories/test-repo/lib/src/components/button/__brick__');
+        final brickDir = Directory('${RepositoryService.repositoriesDir}/test-repo/lib/src/components/button/__brick__');
         await brickDir.create(recursive: true);
 
         final results = await service.findBrick('@test-repo/button');
@@ -198,7 +198,7 @@ description: A button component
 
       test('handles specific repository format with invalid parts', () async {
         // Create repository directory
-        final repoDir = Directory('.fpx_repositories/test-repo');
+        final repoDir = Directory('${RepositoryService.repositoriesDir}/test-repo');
         await repoDir.create(recursive: true);
 
         // Test with invalid format (only @repo)
@@ -224,21 +224,21 @@ repositories:
 ''');
 
         // Create fake repositories
-        final repo1Dir = Directory('.fpx_repositories/repo1');
+        final repo1Dir = Directory('${RepositoryService.repositoriesDir}/repo1');
         await repo1Dir.create(recursive: true);
         
-        final repo2Dir = Directory('.fpx_repositories/repo2');
+        final repo2Dir = Directory('${RepositoryService.repositoriesDir}/repo2');
         await repo2Dir.create(recursive: true);
 
         // Create fpx.yaml files
-        final fpx1File = File('.fpx_repositories/repo1/fpx.yaml');
+        final fpx1File = File('${RepositoryService.repositoriesDir}/repo1/fpx.yaml');
         await fpx1File.writeAsString('''
 components:
   button:
     path: lib/src/components
 ''');
 
-        final fpx2File = File('.fpx_repositories/repo2/fpx.yaml');
+        final fpx2File = File('${RepositoryService.repositoriesDir}/repo2/fpx.yaml');
         await fpx2File.writeAsString('''
 components:
   button:
@@ -246,18 +246,18 @@ components:
 ''');
 
         // Create actual component directories to satisfy brick creation
-        final comp1Dir = Directory('.fpx_repositories/repo1/lib/src/components/button');
+        final comp1Dir = Directory('${RepositoryService.repositoriesDir}/repo1/lib/src/components/button');
         await comp1Dir.create(recursive: true);
-        final brick1File = File('.fpx_repositories/repo1/lib/src/components/button/brick.yaml');
+        final brick1File = File('${RepositoryService.repositoriesDir}/repo1/lib/src/components/button/brick.yaml');
         await brick1File.writeAsString('name: button');
-        final brick1Dir = Directory('.fpx_repositories/repo1/lib/src/components/button/__brick__');
+        final brick1Dir = Directory('${RepositoryService.repositoriesDir}/repo1/lib/src/components/button/__brick__');
         await brick1Dir.create();
 
-        final comp2Dir = Directory('.fpx_repositories/repo2/lib/src/components/button');
+        final comp2Dir = Directory('${RepositoryService.repositoriesDir}/repo2/lib/src/components/button');
         await comp2Dir.create(recursive: true);
-        final brick2File = File('.fpx_repositories/repo2/lib/src/components/button/brick.yaml');
+        final brick2File = File('${RepositoryService.repositoriesDir}/repo2/lib/src/components/button/brick.yaml');
         await brick2File.writeAsString('name: button');
-        final brick2Dir = Directory('.fpx_repositories/repo2/lib/src/components/button/__brick__');
+        final brick2Dir = Directory('${RepositoryService.repositoriesDir}/repo2/lib/src/components/button/__brick__');
         await brick2Dir.create();
 
         final results = await service.findBrick('button');
@@ -277,10 +277,10 @@ repositories:
 ''');
 
         // Create only one repository - the other will cause access error
-        final goodRepo = Directory('.fpx_repositories/good-repo');
+        final goodRepo = Directory('${RepositoryService.repositoriesDir}/good-repo');
         await goodRepo.create(recursive: true);
         
-        final fpxFile = File('.fpx_repositories/good-repo/fpx.yaml');
+        final fpxFile = File('${RepositoryService.repositoriesDir}/good-repo/fpx.yaml');
         await fpxFile.writeAsString('''
 components:
   button:
@@ -288,11 +288,11 @@ components:
 ''');
 
         // Create actual component to satisfy brick creation
-        final compDir = Directory('.fpx_repositories/good-repo/lib/src/components/button');
+        final compDir = Directory('${RepositoryService.repositoriesDir}/good-repo/lib/src/components/button');
         await compDir.create(recursive: true);
-        final brickFile = File('.fpx_repositories/good-repo/lib/src/components/button/brick.yaml');
+        final brickFile = File('${RepositoryService.repositoriesDir}/good-repo/lib/src/components/button/brick.yaml');
         await brickFile.writeAsString('name: button');
-        final brickDir = Directory('.fpx_repositories/good-repo/lib/src/components/button/__brick__');
+        final brickDir = Directory('${RepositoryService.repositoriesDir}/good-repo/lib/src/components/button/__brick__');
         await brickDir.create();
 
         // Don't create error-repo directory to trigger error
@@ -328,20 +328,20 @@ repositories:
 ''');
 
         // Create repository structure
-        final repoDir = Directory('.fpx_repositories/test-repo');
+        final repoDir = Directory('${RepositoryService.repositoriesDir}/test-repo');
         await repoDir.create(recursive: true);
         
-        final fpxFile = File('.fpx_repositories/test-repo/fpx.yaml');
+        final fpxFile = File('${RepositoryService.repositoriesDir}/test-repo/fpx.yaml');
         await fpxFile.writeAsString('''
 components:
   button:
     path: custom/path/to/button
 ''');
 
-        final customPath = Directory('.fpx_repositories/test-repo/custom/path/to/button');
+        final customPath = Directory('${RepositoryService.repositoriesDir}/test-repo/custom/path/to/button');
         await customPath.create(recursive: true);
         
-        final brickYaml = File('.fpx_repositories/test-repo/custom/path/to/button/brick.yaml');
+        final brickYaml = File('${RepositoryService.repositoriesDir}/test-repo/custom/path/to/button/brick.yaml');
         await brickYaml.writeAsString('''
 name: button
 description: A button component
@@ -361,13 +361,13 @@ repositories:
 ''');
 
         // Create repository structure
-        final repoDir = Directory('.fpx_repositories/test-repo');
+        final repoDir = Directory('${RepositoryService.repositoriesDir}/test-repo');
         await repoDir.create(recursive: true);
 
-        final standardPath = Directory('.fpx_repositories/test-repo/bricks/button');
+        final standardPath = Directory('${RepositoryService.repositoriesDir}/test-repo/bricks/button');
         await standardPath.create(recursive: true);
         
-        final brickYaml = File('.fpx_repositories/test-repo/bricks/button/brick.yaml');
+        final brickYaml = File('${RepositoryService.repositoriesDir}/test-repo/bricks/button/brick.yaml');
         await brickYaml.writeAsString('''
 name: button
 description: A button component
@@ -387,7 +387,7 @@ repositories:
 ''');
 
         // Create repository but with permission issue or malformed structure
-        final repoDir = Directory('.fpx_repositories/test-repo');
+        final repoDir = Directory('${RepositoryService.repositoriesDir}/test-repo');
         await repoDir.create(recursive: true);
 
         // Test will pass because exceptions are caught and null is returned
@@ -399,7 +399,7 @@ repositories:
     group('cloneRepository', () {
       test('creates repositories directory if not exists', () async {
         // Ensure .fpx_repositories doesn't exist
-        final repoBaseDir = Directory('.fpx_repositories');
+        final repoBaseDir = Directory(RepositoryService.repositoriesDir);
         if (await repoBaseDir.exists()) {
           await repoBaseDir.delete(recursive: true);
         }
@@ -416,10 +416,10 @@ repositories:
 
       test('removes existing directory before cloning', () async {
         // Create existing repository directory
-        final repoDir = Directory('.fpx_repositories/test-repo');
+        final repoDir = Directory('${RepositoryService.repositoriesDir}/test-repo');
         await repoDir.create(recursive: true);
         
-        final existingFile = File('.fpx_repositories/test-repo/existing.txt');
+        final existingFile = File('${RepositoryService.repositoriesDir}/test-repo/existing.txt');
         await existingFile.writeAsString('existing content');
 
         expect(await existingFile.exists(), isTrue);
@@ -453,7 +453,7 @@ repositories:
 
       test('throws exception on git pull failure', () async {
         // Create repository directory but not a git repository
-        final repoDir = Directory('.fpx_repositories/test-repo');
+        final repoDir = Directory('${RepositoryService.repositoriesDir}/test-repo');
         await repoDir.create(recursive: true);
 
         expect(
@@ -466,10 +466,10 @@ repositories:
     group('readFpxConfig', () {
       test('returns null for invalid yaml content', () async {
         // Create repository directory with invalid fpx.yaml
-        final repoDir = Directory('.fpx_repositories/test-repo');
+        final repoDir = Directory('${RepositoryService.repositoriesDir}/test-repo');
         await repoDir.create(recursive: true);
         
-        final fpxFile = File('.fpx_repositories/test-repo/fpx.yaml');
+        final fpxFile = File('${RepositoryService.repositoriesDir}/test-repo/fpx.yaml');
         await fpxFile.writeAsString('''
 invalid: [
   yaml content
@@ -481,10 +481,10 @@ invalid: [
 
       test('returns null for non-map yaml content', () async {
         // Create repository directory with non-map fpx.yaml
-        final repoDir = Directory('.fpx_repositories/test-repo');
+        final repoDir = Directory('${RepositoryService.repositoriesDir}/test-repo');
         await repoDir.create(recursive: true);
         
-        final fpxFile = File('.fpx_repositories/test-repo/fpx.yaml');
+        final fpxFile = File('${RepositoryService.repositoriesDir}/test-repo/fpx.yaml');
         await fpxFile.writeAsString('''
 - item1
 - item2
@@ -498,18 +498,18 @@ invalid: [
     group('scanForBricks', () {
       test('scans for brick.yaml files when no fpx.yaml', () async {
         // Create repository directory without fpx.yaml
-        final repoDir = Directory('.fpx_repositories/test-repo');
+        final repoDir = Directory('${RepositoryService.repositoriesDir}/test-repo');
         await repoDir.create(recursive: true);
 
         // Create some brick.yaml files
-        final brick1Dir = Directory('.fpx_repositories/test-repo/components/button');
+        final brick1Dir = Directory('${RepositoryService.repositoriesDir}/test-repo/components/button');
         await brick1Dir.create(recursive: true);
-        final brick1File = File('.fpx_repositories/test-repo/components/button/brick.yaml');
+        final brick1File = File('${RepositoryService.repositoriesDir}/test-repo/components/button/brick.yaml');
         await brick1File.writeAsString('name: button');
 
-        final brick2Dir = Directory('.fpx_repositories/test-repo/widgets/card');
+        final brick2Dir = Directory('${RepositoryService.repositoriesDir}/test-repo/widgets/card');
         await brick2Dir.create(recursive: true);
-        final brick2File = File('.fpx_repositories/test-repo/widgets/card/brick.yaml');
+        final brick2File = File('${RepositoryService.repositoriesDir}/test-repo/widgets/card/brick.yaml');
         await brick2File.writeAsString('name: card');
 
         final components = await service.scanForBricks('test-repo');
@@ -518,17 +518,17 @@ invalid: [
       });
 
       test('skips brick.yaml files in root directory', () async {
-        final repoDir = Directory('.fpx_repositories/test-repo');
+        final repoDir = Directory('${RepositoryService.repositoriesDir}/test-repo');
         await repoDir.create(recursive: true);
 
         // Create brick.yaml in root (should be skipped)
-        final rootBrickFile = File('.fpx_repositories/test-repo/brick.yaml');
+        final rootBrickFile = File('${RepositoryService.repositoriesDir}/test-repo/brick.yaml');
         await rootBrickFile.writeAsString('name: root');
 
         // Create valid brick.yaml in subdirectory
-        final validDir = Directory('.fpx_repositories/test-repo/components/button');
+        final validDir = Directory('${RepositoryService.repositoriesDir}/test-repo/components/button');
         await validDir.create(recursive: true);
-        final validBrickFile = File('.fpx_repositories/test-repo/components/button/brick.yaml');
+        final validBrickFile = File('${RepositoryService.repositoriesDir}/test-repo/components/button/brick.yaml');
         await validBrickFile.writeAsString('name: button');
 
         final components = await service.scanForBricks('test-repo');
@@ -537,18 +537,18 @@ invalid: [
       });
 
       test('avoids duplicate component names in scan', () async {
-        final repoDir = Directory('.fpx_repositories/test-repo');
+        final repoDir = Directory('${RepositoryService.repositoriesDir}/test-repo');
         await repoDir.create(recursive: true);
 
         // Create multiple brick.yaml files with same component name
-        final dir1 = Directory('.fpx_repositories/test-repo/path1/button');
+        final dir1 = Directory('${RepositoryService.repositoriesDir}/test-repo/path1/button');
         await dir1.create(recursive: true);
-        final file1 = File('.fpx_repositories/test-repo/path1/button/brick.yaml');
+        final file1 = File('${RepositoryService.repositoriesDir}/test-repo/path1/button/brick.yaml');
         await file1.writeAsString('name: button');
 
-        final dir2 = Directory('.fpx_repositories/test-repo/path2/button');
+        final dir2 = Directory('${RepositoryService.repositoriesDir}/test-repo/path2/button');
         await dir2.create(recursive: true);
-        final file2 = File('.fpx_repositories/test-repo/path2/button/brick.yaml');
+        final file2 = File('${RepositoryService.repositoriesDir}/test-repo/path2/button/brick.yaml');
         await file2.writeAsString('name: button');
 
         final components = await service.scanForBricks('test-repo');
@@ -558,7 +558,7 @@ invalid: [
 
     group('getComponentConfig', () {
       test('returns null when no fpx.yaml exists', () async {
-        final repoDir = Directory('.fpx_repositories/test-repo');
+        final repoDir = Directory('${RepositoryService.repositoriesDir}/test-repo');
         await repoDir.create(recursive: true);
 
         final config = await service.getComponentConfig('test-repo', 'button');
@@ -566,10 +566,10 @@ invalid: [
       });
 
       test('checks bricks section for backward compatibility', () async {
-        final repoDir = Directory('.fpx_repositories/test-repo');
+        final repoDir = Directory('${RepositoryService.repositoriesDir}/test-repo');
         await repoDir.create(recursive: true);
         
-        final fpxFile = File('.fpx_repositories/test-repo/fpx.yaml');
+        final fpxFile = File('${RepositoryService.repositoriesDir}/test-repo/fpx.yaml');
         await fpxFile.writeAsString('''
 bricks:
   legacy_button:
@@ -584,10 +584,10 @@ bricks:
       });
 
       test('returns null for non-existent component', () async {
-        final repoDir = Directory('.fpx_repositories/test-repo');
+        final repoDir = Directory('${RepositoryService.repositoriesDir}/test-repo');
         await repoDir.create(recursive: true);
         
-        final fpxFile = File('.fpx_repositories/test-repo/fpx.yaml');
+        final fpxFile = File('${RepositoryService.repositoriesDir}/test-repo/fpx.yaml');
         await fpxFile.writeAsString('''
 components:
   button:
@@ -619,13 +619,13 @@ components:
 
       test('returns components from successfully accessed repositories', () async {
         // Create one repository with brick.yaml files
-        final goodRepo = Directory('.fpx_repositories/good-repo');
+        final goodRepo = Directory('${RepositoryService.repositoriesDir}/good-repo');
         await goodRepo.create(recursive: true);
         
         // Create brick.yaml files that scanForBricks can find
-        final buttonDir = Directory('.fpx_repositories/good-repo/components/button');
+        final buttonDir = Directory('${RepositoryService.repositoriesDir}/good-repo/components/button');
         await buttonDir.create(recursive: true);
-        final buttonBrick = File('.fpx_repositories/good-repo/components/button/brick.yaml');
+        final buttonBrick = File('${RepositoryService.repositoriesDir}/good-repo/components/button/brick.yaml');
         await buttonBrick.writeAsString('name: button');
 
         // Don't create bad-repo to show that only existing repos are scanned
@@ -649,10 +649,10 @@ components:
     group('YAML conversion utilities', () {
       test('_convertYamlMapToMap converts nested YAML map correctly', () async {
         // Create a test repository with fpx.yaml to trigger the conversion
-        final repoDir = Directory('.fpx_repositories/yaml-test-repo');
+        final repoDir = Directory('${RepositoryService.repositoriesDir}/yaml-test-repo');
         await repoDir.create(recursive: true);
         
-        final fpxFile = File('.fpx_repositories/yaml-test-repo/fpx.yaml');
+        final fpxFile = File('${RepositoryService.repositoriesDir}/yaml-test-repo/fpx.yaml');
         await fpxFile.writeAsString('''
 components:
   button:
@@ -689,10 +689,10 @@ variables:
 
       test('_convertYamlListToList converts nested YAML list correctly', () async {
         // Create a test repository with fpx.yaml containing complex lists
-        final repoDir = Directory('.fpx_repositories/yaml-list-test-repo');
+        final repoDir = Directory('${RepositoryService.repositoriesDir}/yaml-list-test-repo');
         await repoDir.create(recursive: true);
         
-        final fpxFile = File('.fpx_repositories/yaml-list-test-repo/fpx.yaml');
+        final fpxFile = File('${RepositoryService.repositoriesDir}/yaml-list-test-repo/fpx.yaml');
         await fpxFile.writeAsString('''
 components:
   button:
