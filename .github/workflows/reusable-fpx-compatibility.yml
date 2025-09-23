@@ -20,7 +20,7 @@ on:
 jobs:
   ensure-fpx-compatibility:
     runs-on: ubuntu-latest
-    
+    #add a comment to have a commit hash to reference to
     steps:
       - name: Checkout component repository
         uses: actions/checkout@v4
