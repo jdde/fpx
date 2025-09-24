@@ -57,7 +57,7 @@ jobs:
       - name: Update repository to re-process cloned repo
         run: |
           cd "$RUNNER_TEMP/test_project"
-          fpx repository update
+          fpx repository update --no-pull
 
       - name: List available components
         run: |
@@ -71,7 +71,7 @@ jobs:
           cd "$RUNNER_TEMP/test_project"
           echo "Adding component: ${{ inputs.component_name }}"
           fpx add "${{ inputs.component_name }}" --path lib/components
-        continue-on-error: true
+        continue-on-error: false
 
       - name: Check component files
         run: |
