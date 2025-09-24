@@ -7,30 +7,20 @@ on:
         description: 'Name of the component to test for fpx compatibility'
         required: true
         type: string
-      flutter_version:
-        description: 'Flutter version to use'
-        required: false
-        type: string
-        default: 'stable'
-      repository_name:
-        description: 'Name to use for the repository (optional, will be auto-generated if not provided)'
-        required: false
-        type: string
 
 jobs:
   ensure-fpx-compatibility:
     runs-on: ubuntu-latest
-    
+    #add a comment to have a commit hash to reference to
     steps:
       - name: Checkout component repository
         uses: actions/checkout@v4
 
-      - name: Setup Flutter
+      - name: Setup flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: ${{ inputs.flutter_version }}
-          channel: stable
-          
+            channel: stable
+
       - name: Install fpx globally
         run: dart pub global activate fpx
 
@@ -42,49 +32,57 @@ jobs:
 
       - name: Create test Flutter project
         run: |
-          flutter create --template=app test_project
-          cd test_project
+          # Create test project in runner temp directory to avoid circular copy issues
+          flutter create --template=app "$RUNNER_TEMP/test_project"
 
-      - name: Get repository URL
-        id: get_repo_url
+      - name: Get repository name from GitHub repository
+        id: get_repo_name
         run: |
-          REPO_URL="https://github.com/${{ github.repository }}.git"
-          echo "repository_url=$REPO_URL" >> $GITHUB_OUTPUT
-          echo "Using repository URL: $REPO_URL"
+          REPO_NAME="${{ github.repository }}"
+          # Extract just the repo name (remove owner/)
+          REPO_NAME=${REPO_NAME##*/}
+          echo "repository_name=$REPO_NAME" >> $GITHUB_OUTPUT
+          echo "Using repository name: $REPO_NAME"
 
-      - name: Add component repository to fpx
+      - name: Copy checked-out repository to fpx repositories folder
         run: |
-          cd test_project
-          if [ -n "${{ inputs.repository_name }}" ]; then
-            fpx repository add --name "${{ inputs.repository_name }}" --url "${{ steps.get_repo_url.outputs.repository_url }}"
-          else
-            fpx repository add --url "${{ steps.get_repo_url.outputs.repository_url }}"
-          fi
+          cd "$RUNNER_TEMP/test_project"
+          # Create .fpx_repositories directory if it doesn't exist
+          mkdir -p .fpx_repositories
+          # Copy the current repository (already checked out by actions/checkout) to fpx repositories
+          # Exclude the .fpx_repositories directory itself to avoid circular copies
+          rsync -av --exclude='.fpx_repositories' "${{ github.workspace }}/" ".fpx_repositories/${{ steps.get_repo_name.outputs.repository_name }}/"
+          echo "Repository copied to .fpx_repositories/${{ steps.get_repo_name.outputs.repository_name }}"
+
+      - name: Update repository to re-process cloned repo
+        run: |
+          cd "$RUNNER_TEMP/test_project"
+          fpx repository update --no-pull
 
       - name: List available components
         run: |
-          cd test_project
+          cd "$RUNNER_TEMP/test_project"
           echo "Available components:"
           fpx list
 
       - name: Add component to test project
         id: add_component
         run: |
-          cd test_project
+          cd "$RUNNER_TEMP/test_project"
           echo "Adding component: ${{ inputs.component_name }}"
           fpx add "${{ inputs.component_name }}" --path lib/components
-        continue-on-error: true
+        continue-on-error: false
 
       - name: Check component files
         run: |
-          cd test_project
+          cd "$RUNNER_TEMP/test_project"
           echo "Files created:"
           find lib/components -name "*.dart" -type f | head -20
           
       - name: Analyze dependencies with dart analyze
         id: analyze_deps
         run: |
-          cd test_project
+          cd "$RUNNER_TEMP/test_project"
           echo "Running dart analyze to check for dependency issues..."
           dart analyze 2>&1 | tee analyze_output.txt || true
           
@@ -101,7 +99,7 @@ jobs:
       - name: Extract third-party dependencies
         id: extract_deps
         run: |
-          cd test_project
+          cd "$RUNNER_TEMP/test_project"
           echo "Extracting dependencies from component files..."
           
           # Find all dart files in the component
@@ -145,7 +143,7 @@ jobs:
       - name: Test compilation
         id: test_compile
         run: |
-          cd test_project
+          cd "$RUNNER_TEMP/test_project"
           echo "Testing component compilation..."
           
           # Try to compile the project
@@ -159,7 +157,7 @@ jobs:
 
       - name: Check for README with dependencies
         run: |
-          cd test_project
+          cd "$RUNNER_TEMP/test_project"
           readme_files=$(find lib/components -name "README.md" -type f 2>/dev/null || echo "")
           
           if [ -n "$readme_files" ]; then
@@ -175,13 +173,12 @@ jobs:
 
       - name: Generate fpx compatibility report
         run: |
-          cd test_project
+          cd "$RUNNER_TEMP/test_project"
           echo "## fpx Compatibility Report" > fpx_compatibility_report.md
           echo "" >> fpx_compatibility_report.md
           echo "**Component:** ${{ inputs.component_name }}" >> fpx_compatibility_report.md
           echo "**Repository:** ${{ github.repository }}" >> fpx_compatibility_report.md
           echo "**Commit:** ${{ github.sha }}" >> fpx_compatibility_report.md
-          echo "**Flutter Version:** ${{ inputs.flutter_version }}" >> fpx_compatibility_report.md
           echo "" >> fpx_compatibility_report.md
           
           if [ "${{ steps.add_component.outcome }}" = "success" ]; then
@@ -224,10 +221,10 @@ jobs:
         with:
           name: fpx-compatibility-results-${{ inputs.component_name }}
           path: |
-            test_project/analyze_output.txt
-            test_project/fpx_compatibility_report.md
-            test_project/lib/components/**/*.dart
-            test_project/lib/components/**/README.md
+            ${{ env.RUNNER_TEMP }}/test_project/analyze_output.txt
+            ${{ env.RUNNER_TEMP }}/test_project/fpx_compatibility_report.md
+            ${{ env.RUNNER_TEMP }}/test_project/lib/components/**/*.dart
+            ${{ env.RUNNER_TEMP }}/test_project/lib/components/**/README.md
           retention-days: 30
 
     outputs:

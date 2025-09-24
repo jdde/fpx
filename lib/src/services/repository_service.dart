@@ -255,7 +255,7 @@ class RepositoryService {
   }
 
   /// Update an existing cloned repository.
-  Future<void> updateRepository(String name) async {
+  Future<void> updateRepository(String name, {bool pullAgain = true}) async {
     final repoDir = Directory(path.join(repositoriesDir, name));
     
     if (!await repoDir.exists()) {
@@ -263,15 +263,27 @@ class RepositoryService {
     }
     
     // Pull latest changes
-    final result = await Process.run( // coverage:ignore-line
-      'git',
-      ['pull'],
-      workingDirectory: repoDir.path,
-    );
-    
-    if (result.exitCode != 0) { // coverage:ignore-line
-      throw Exception('Failed to update repository: ${result.stderr}'); // coverage:ignore-line
+    if (pullAgain) {
+      final result = await Process.run( // coverage:ignore-line
+        'git',
+        ['pull'],
+        workingDirectory: repoDir.path,
+      );
+
+      if (result.exitCode != 0) { // coverage:ignore-line
+        throw Exception('Failed to update repository: ${result.stderr}'); // coverage:ignore-line
+      }
     }
+
+    _logger.info('Repository directory exists; will reprocess Cloned repository'); // coverage:ignore-line
+    // re-execute post processing, which will have the same outcome but in compatibility action
+    // it will process the manually moved component library to be usable.
+    // since clone via url will fail in github action
+    await _postCloneService.processClonedRepository( // coverage:ignore-line
+      repositoryName: name, // coverage:ignore-line
+      repositoryPath: repoDir.path, // coverage:ignore-line
+      repositoryUrl: '', // URL not available during update
+    ); // coverage:ignore-line
   }
 
   /// Get the local directory path for a cloned repository.

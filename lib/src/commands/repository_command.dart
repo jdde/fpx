@@ -361,12 +361,18 @@ class RepositoryUpdateCommand extends Command<int> {
   RepositoryUpdateCommand({
     required Logger logger,
   }) : _logger = logger {
-    argParser.addOption(
-      'name',
-      abbr: 'n',
-      help: 'Repository name to update (updates all if not specified)',
-      mandatory: false,
-    );
+    argParser
+      ..addOption(
+        'name',
+        abbr: 'n',
+        help: 'Repository name to update (updates all if not specified)',
+        mandatory: false,
+      )
+      ..addFlag(
+        'no-pull',
+        help: 'Skip git pull and only reprocess the repository',
+        negatable: false,
+      );
   }
 
   @override
@@ -376,13 +382,14 @@ class RepositoryUpdateCommand extends Command<int> {
   String get name => 'update';
 
   @override
-  String get invocation => 'fpx repository update [--name <name>]';
+  String get invocation => 'fpx repository update [--name <name>] [--no-pull]';
 
   final Logger _logger;
 
   @override
   Future<int> run() async {
     final repositoryName = argResults!['name'] as String?;
+    final skipPull = argResults!['no-pull'] as bool;
 
     try {
       final repositories = await _getAvailableRepositories();
@@ -401,11 +408,11 @@ class RepositoryUpdateCommand extends Command<int> {
           return ExitCode.usage.code; // coverage:ignore-line
         }
 
-        await _updateRepository(repositoryService, repositoryName); // coverage:ignore-line
+        await _updateRepository(repositoryService, repositoryName, pullAgain: !skipPull); // coverage:ignore-line
       } else {
         // Update all repositories
         for (final repoName in repositories) {
-          await _updateRepository(repositoryService, repoName); // coverage:ignore-line
+          await _updateRepository(repositoryService, repoName, pullAgain: !skipPull); // coverage:ignore-line
         }
       }
 
@@ -416,12 +423,12 @@ class RepositoryUpdateCommand extends Command<int> {
     } // coverage:ignore-end
   }
 
-  Future<void> _updateRepository(RepositoryService repositoryService, String repoName) async {
+  Future<void> _updateRepository(RepositoryService repositoryService, String repoName, {bool pullAgain = true}) async {
     try {
       _logger.info('🔄 Updating repository "$repoName"...'); // coverage:ignore-line
       
       if (await repositoryService.isRepositoryCloned(repoName)) {
-        await repositoryService.updateRepository(repoName); // coverage:ignore-line
+        await repositoryService.updateRepository(repoName, pullAgain: pullAgain); // coverage:ignore-line
       } else {
         _logger.warn('⚠️  Repository "$repoName" not cloned locally, skipping update'); // coverage:ignore-line
         return; // coverage:ignore-line
