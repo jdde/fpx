@@ -146,13 +146,24 @@ jobs:
           cd "$RUNNER_TEMP/test_project"
           echo "Testing component compilation..."
           
-          # Try to compile the project
-          if flutter analyze --no-pub; then
+          # Run flutter analyze and capture output
+          analyze_output=$(flutter analyze --no-pub 2>&1)
+          analyze_exit_code=$?
+          
+          echo "$analyze_output"
+          
+          # Check if there are any errors in the output (even if exit code is 0)
+          if echo "$analyze_output" | grep -q "error •"; then
+            echo "Component compilation failed - errors found in analysis"
+            echo "compilation_success=false" >> $GITHUB_OUTPUT
+            exit 1
+          elif [ $analyze_exit_code -ne 0 ]; then
+            echo "Component compilation failed - analysis command failed"
+            echo "compilation_success=false" >> $GITHUB_OUTPUT
+            exit 1
+          else
             echo "Component compiles successfully"
             echo "compilation_success=true" >> $GITHUB_OUTPUT
-          else
-            echo "Component compilation failed"
-            echo "compilation_success=false" >> $GITHUB_OUTPUT
           fi
 
       - name: Check for README with dependencies
