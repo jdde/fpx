@@ -35,17 +35,28 @@ jobs:
           flutter create --template=app test_project
           cd test_project
 
-      - name: Get repository URL
-        id: get_repo_url
+      - name: Get repository name from GitHub repository
+        id: get_repo_name
         run: |
-          REPO_URL="https://github.com/${{ github.repository }}.git"
-          echo "repository_url=$REPO_URL" >> $GITHUB_OUTPUT
-          echo "Using repository URL: $REPO_URL"
+          REPO_NAME="${{ github.repository }}"
+          # Extract just the repo name (remove owner/)
+          REPO_NAME=${REPO_NAME##*/}
+          echo "repository_name=$REPO_NAME" >> $GITHUB_OUTPUT
+          echo "Using repository name: $REPO_NAME"
 
-      - name: Add component repository to fpx
+      - name: Copy checked-out repository to fpx repositories folder
         run: |
           cd test_project
-          fpx repository add --url "${{ steps.get_repo_url.outputs.repository_url }}"
+          # Create .fpx_repositories directory if it doesn't exist
+          mkdir -p .fpx_repositories
+          # Copy the current repository (already checked out by actions/checkout) to fpx repositories
+          cp -r "${{ github.workspace }}" ".fpx_repositories/${{ steps.get_repo_name.outputs.repository_name }}"
+          echo "Repository copied to .fpx_repositories/${{ steps.get_repo_name.outputs.repository_name }}"
+
+      - name: Update repository to re-process cloned repo
+        run: |
+          cd test_project
+          fpx repository update
 
       - name: List available components
         run: |
