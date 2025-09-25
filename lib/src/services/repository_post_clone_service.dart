@@ -370,6 +370,7 @@ vars:
   /// Returns a map of constant names to their values with const prefix when needed.
   Future<Map<String, String>> _parseConstantsFromFile(File file, String className) async {
     final constants = <String, String>{};
+    final rawConstants = <String, String>{}; // Store raw values for reference resolution
     
     try {
       final content = await file.readAsString();
@@ -386,6 +387,18 @@ vars:
       
       final matches = constRegex.allMatches(content);
       
+      // First pass: collect all raw constant definitions
+      for (final match in matches) {
+        final constantName = match.group(3)!.trim();
+        final constantValue = match.group(4)!.trim();
+        
+        // Clean up the value - remove extra whitespace and newlines
+        final cleanValue = constantValue.replaceAll(RegExp(r'\s+'), ' ').trim();
+        
+        rawConstants[constantName] = cleanValue;
+      }
+      
+      // Second pass: resolve references and process values
       for (final match in matches) {
         final declarationType = match.group(1)!.trim(); // 'const' or 'final'
         final constantType = match.group(2)!.trim(); // Type like TextStyle, Color, etc.
@@ -395,18 +408,23 @@ vars:
         // Clean up the value - remove extra whitespace and newlines
         final cleanValue = constantValue.replaceAll(RegExp(r'\s+'), ' ').trim();
         
+        // Resolve constant references within the same class
+        final resolvedValue = _resolveConstantReferences(cleanValue, rawConstants);
+        
+        _logger.info('Processing: $constantName = $cleanValue -> $resolvedValue');
+        
         // Check if this is a complex object that should be handled specially
         final replacementValue = _processConstantValue(
           declarationType, 
           constantType, 
           constantName, 
-          cleanValue,
+          resolvedValue,
         );
         
         if (replacementValue != null) {
           // Store with full class prefix for replacement
           constants['$className.$constantName'] = replacementValue;
-          _logger.detail('Found $declarationType: $className.$constantName = $replacementValue');
+          _logger.info('Found $declarationType: $className.$constantName = $replacementValue');
         } else {
           _logger.warn('Skipped complex constant: $className.$constantName (requires manual handling)'); // coverage:ignore-line
         }
@@ -418,6 +436,41 @@ vars:
     }
     
     return constants;
+  }
+
+  /// Resolve constant references within the same class.
+  /// 
+  /// [value] - The constant value that may contain references
+  /// [rawConstants] - Map of constant names to their raw values within the same class
+  /// 
+  /// Returns the resolved value with references replaced by actual values.
+  String _resolveConstantReferences(String value, Map<String, String> rawConstants) {
+    String resolvedValue = value;
+    
+    // Keep resolving until no more references are found (handles chains like xs -> spacing2 -> 8.0)
+    bool hasChanges = true;
+    int maxIterations = 10; // Prevent infinite loops
+    int iterations = 0;
+    
+    while (hasChanges && iterations < maxIterations) {
+      hasChanges = false;
+      iterations++;
+      
+      // Look for simple identifier references (single word that matches a constant name)
+      for (final entry in rawConstants.entries) {
+        final constantName = entry.key;
+        final constantValue = entry.value;
+        
+        // Only replace if the value is exactly the constant name (not part of a larger expression)
+        if (resolvedValue.trim() == constantName) {
+          resolvedValue = constantValue;
+          hasChanges = true;
+          break; // Start over with the new value
+        }
+      }
+    }
+    
+    return resolvedValue;
   }
 
   /// Process a constant value to determine the best replacement strategy.
