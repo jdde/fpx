@@ -1179,6 +1179,15 @@ Please check the latest versions of these packages on [pub.dev](https://pub.dev)
   Future<void> _addImportsToFile(File file, Set<String> dependencies) async {
     try {
       final content = await file.readAsString();
+      final fileName = path.basenameWithoutExtension(file.path);
+      
+      // Skip adding imports to dependency files themselves
+      // Check if this file is one of the dependency files
+      for (final dep in dependencies) {
+        if (fileName == 'base_$dep') {
+          return; // Don't add imports to the dependency file itself
+        }
+      }
       
       // Check if imports are needed (if the file references dependency classes)
       bool needsImports = false;
