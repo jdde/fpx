@@ -42,6 +42,9 @@ class RepositoryPostCloneService {
       // Add __brick__ to the repository
       await _addBricksToRepository(repositoryPath, config);
       
+      // Resolve cross-component dependencies in bricks
+      await _resolveBrickDependencies(repositoryPath, config);
+      
       // Future: Add other custom manipulations here
       // await _addCustomConfigurations(repositoryPath, config);
       // await _setupCustomStructure(repositoryPath, config);
@@ -72,6 +75,13 @@ class RepositoryPostCloneService {
         
         // Create __brick__ directory beside the widget
         final widgetBricksDir = Directory(path.join(widget.path, '__brick__'));
+        
+        // Skip if __brick__ directory already exists (already processed)
+        if (await widgetBricksDir.exists()) {
+          _logger.detail('    Skipping ${widget.name} - already has __brick__ directory');
+          continue;
+        }
+        
         await widgetBricksDir.create(recursive: true);
         
         // Create brick.yaml file
@@ -120,6 +130,12 @@ class RepositoryPostCloneService {
       for (final entity in entities) {
         if (entity is Directory) {
           final widgetName = path.basename(entity.path);
+          
+          // Skip __brick__ directories (they are not components)
+          if (widgetName == '__brick__') {
+            continue;
+          }
+          
           final widgetFiles = await _getWidgetFiles(entity.path);
           
           if (widgetFiles.isNotEmpty) {
@@ -158,7 +174,11 @@ class RepositoryPostCloneService {
         if (entity is File && entity.path.endsWith('.dart')) {
           // Get relative path from widget directory
           final relativePath = path.relative(entity.path, from: widgetPath);
-          files.add(relativePath);
+          
+          // Skip files inside __brick__ directories
+          if (!relativePath.contains('__brick__')) {
+            files.add(relativePath);
+          }
         }
       }
       
@@ -891,6 +911,348 @@ Please check the latest versions of these packages on [pub.dev](https://pub.dev)
     }
     
     return false;
+  }
+
+  /// Resolve cross-component dependencies in brick templates
+  /// 
+  /// This method analyzes each brick template for external class references
+  /// and includes the corresponding dependency bricks inline.
+  Future<void> _resolveBrickDependencies(String repositoryPath, FpxConfig config) async {
+    try {
+      _logger.info('🔗 Resolving component dependencies...');
+      
+      final componentsPath = path.join(repositoryPath, config.bricks.path);
+      final componentsDir = Directory(componentsPath);
+      
+      if (!await componentsDir.exists()) {
+        _logger.detail('Components directory not found: $componentsPath');
+        return;
+      }
+      
+      // Find all components with brick templates
+      final components = <String, String>{};
+      await for (final entity in componentsDir.list()) {
+        if (entity is Directory) {
+          final componentName = path.basename(entity.path);
+          final brickDir = Directory(path.join(entity.path, '__brick__'));
+          if (await brickDir.exists()) {
+            components[componentName] = entity.path;
+          }
+        }
+      }
+      
+      if (components.isEmpty) {
+        _logger.detail('No components with brick templates found');
+        return;
+      }
+      
+      _logger.info('📦 Found ${components.length} component(s): ${components.keys.join(', ')}');
+      
+      // Analyze each component for dependencies
+      for (final entry in components.entries) {
+        final componentName = entry.key;
+        final componentPath = entry.value;
+        
+        await _resolveComponentDependencies(
+          componentName, 
+          componentPath, 
+          components, 
+          repositoryPath
+        );
+      }
+      
+      _logger.success('✅ Component dependency resolution completed');
+    } catch (e, stackTrace) {
+      _logger.warn('⚠️  Dependency resolution failed: $e');
+      _logger.detail('Stack trace: $stackTrace');
+      // Continue without dependencies rather than failing completely
+    }
+  }
+
+  /// Resolve dependencies for a single component
+  Future<void> _resolveComponentDependencies(
+    String componentName,
+    String componentPath,
+    Map<String, String> allComponents,
+    String repositoryPath,
+  ) async {
+    try {
+      _logger.detail('🔍 Analyzing dependencies for $componentName...');
+      
+      final brickDir = Directory(path.join(componentPath, '__brick__'));
+      final dependencies = <String>{};
+      
+      // Analyze all Dart files in the brick template
+      await for (final file in brickDir.list(recursive: true)) {
+        if (file is File && file.path.endsWith('.dart')) {
+          final content = await file.readAsString();
+          final detectedClasses = _extractExternalClassReferences(content);
+          
+          // Find which components provide these classes
+          for (final className in detectedClasses) {
+            final provider = _findComponentForClass(className, allComponents);
+            if (provider != null && provider != componentName) {
+              dependencies.add(provider);
+            }
+          }
+        }
+      }
+      
+      if (dependencies.isEmpty) {
+        _logger.detail('  No dependencies found for $componentName');
+        return;
+      }
+      
+      _logger.info('  📦 $componentName depends on: ${dependencies.join(', ')}');
+      
+      // Include dependency files in the brick template
+      for (final depName in dependencies) {
+        await _includeDependencyInBrick(componentName, componentPath, depName, allComponents);
+      }
+
+      // Add import statements for dependencies
+      await _addImportStatements(componentPath, dependencies);
+      
+    } catch (e) {
+      _logger.warn('  ⚠️  Failed to resolve dependencies for $componentName: $e');
+    }
+  }
+
+  /// Extract class references that might be external dependencies
+  Set<String> _extractExternalClassReferences(String dartCode) {
+    final classRefs = <String>{};
+    
+    // Patterns to find class references
+    final patterns = [
+      // Constructor calls: SomeClass(...)
+      RegExp(r'(?:new\s+)?([A-Z][a-zA-Z0-9]*)\s*\('),
+      // Type annotations: SomeClass variable, SomeClass? optional
+      RegExp(r':\s*([A-Z][a-zA-Z0-9]*)[<\?\s,\)]'),
+      // Static method/property access: SomeClass.method()
+      RegExp(r'([A-Z][a-zA-Z0-9]*)\.[a-zA-Z_]'),
+      // Enum access: SomeEnum.value
+      RegExp(r'([A-Z][a-zA-Z0-9]*)\.[a-z]'),
+    ];
+    
+    for (final pattern in patterns) {
+      final matches = pattern.allMatches(dartCode);
+      for (final match in matches) {
+        final className = match.group(1);
+        if (className != null && _isComponentClass(className)) {
+          classRefs.add(className);
+        }
+      }
+    }
+    
+    return classRefs;
+  }
+
+  /// Check if a class name looks like it could be from a component
+  bool _isComponentClass(String className) {
+    // Skip common Flutter/Dart classes
+    final commonClasses = {
+      'Widget', 'StatefulWidget', 'StatelessWidget', 'State', 'BuildContext',
+      'Key', 'Color', 'TextStyle', 'EdgeInsets', 'BorderRadius', 'Duration',
+      'VoidCallback', 'ValueChanged', 'String', 'int', 'double', 'bool', 'List',
+      'Map', 'Set', 'Function', 'Object', 'Container', 'Column', 'Row', 'Text',
+      'SizedBox', 'Padding', 'Center', 'Align', 'Positioned', 'AnimatedBuilder',
+      'GestureDetector', 'InkWell', 'Material', 'Scaffold', 'AppBar', 'Icon',
+      'CustomPaint', 'CustomPainter', 'Canvas', 'Size', 'Paint', 'Offset',
+      'File', 'Directory', 'LogicalKeyboardKey', 'KeyDownEvent', 'KeyEventResult',
+      'MouseRegion', 'Focus', 'Stack', 'SingleTickerProviderStateMixin'
+    };
+    
+    if (commonClasses.contains(className)) {
+      return false;
+    }
+    
+    // Look for component-like patterns
+    final componentPatterns = [
+      RegExp(r'^Base[A-Z]'),    // BaseButton, BaseCheckbox, etc.
+      RegExp(r'^Ui[A-Z]'),      // UiButton, UiColors, etc.
+      RegExp(r'(Size|State|Shape|Style|Config)$'), // CheckboxSize, CheckboxState, etc.
+    ];
+    
+    return componentPatterns.any((pattern) => pattern.hasMatch(className));
+  }
+
+  /// Find which component provides a particular class
+  String? _findComponentForClass(String className, Map<String, String> allComponents) {
+    for (final entry in allComponents.entries) {
+      final componentName = entry.key;
+      final componentPath = entry.value;
+      
+      // Check brick template files
+      final brickDir = Directory(path.join(componentPath, '__brick__'));
+      try {
+        if (brickDir.existsSync()) {
+          for (final file in brickDir.listSync(recursive: true)) {
+            if (file is File && file.path.endsWith('.dart')) {
+              final content = file.readAsStringSync();
+              if (_classDefinedInFile(content, className)) {
+                return componentName;
+              }
+            }
+          }
+        }
+      } catch (e) {
+        // Continue searching other components
+      }
+    }
+    
+    return null;
+  }
+
+  /// Check if a class is defined in the given file content
+  bool _classDefinedInFile(String content, String className) {
+    final patterns = [
+      RegExp('class\\s+$className\\s+'),
+      RegExp('enum\\s+$className\\s+'),
+      RegExp('typedef\\s+.*$className\\s+'),
+      RegExp('mixin\\s+$className\\s+'),
+    ];
+    
+    return patterns.any((pattern) => pattern.hasMatch(content));
+  }
+
+  /// Include dependency component files in the main component's brick
+  Future<void> _includeDependencyInBrick(
+    String componentName,
+    String componentPath,
+    String dependencyName,
+    Map<String, String> allComponents,
+  ) async {
+    try {
+      final depPath = allComponents[dependencyName];
+      if (depPath == null) {
+        _logger.warn('    Dependency component $dependencyName not found');
+        return;
+      }
+      
+      final depBrickDir = Directory(path.join(depPath, '__brick__'));
+      final targetBrickDir = Directory(path.join(componentPath, '__brick__'));
+      
+      if (!await depBrickDir.exists()) {
+        _logger.warn('    Dependency brick not found for $dependencyName');
+        return;
+      }
+      
+      _logger.detail('    Including $dependencyName files in $componentName brick');
+      
+      // Copy dependency brick files to the target brick
+      await for (final file in depBrickDir.list(recursive: true)) {
+        if (file is File && file.path.endsWith('.dart')) {
+          final relativePath = path.relative(file.path, from: depBrickDir.path);
+          final targetFile = File(path.join(targetBrickDir.path, relativePath));
+          
+          // Only copy if the file doesn't already exist to avoid conflicts
+          if (!await targetFile.exists()) {
+            await targetFile.parent.create(recursive: true);
+            await file.copy(targetFile.path);
+            _logger.detail('      Copied $relativePath');
+          }
+        }
+      }
+      
+    } catch (e) {
+      _logger.warn('    Failed to include dependency $dependencyName: $e');
+    }
+  }
+
+  /// Add import statements for dependency components
+  Future<void> _addImportStatements(String componentPath, Set<String> dependencies) async {
+    try {
+      final brickDir = Directory(path.join(componentPath, '__brick__'));
+      
+      // Process all Dart files in the brick template
+      await for (final file in brickDir.list(recursive: true)) {
+        if (file is File && file.path.endsWith('.dart')) {
+          await _addImportsToFile(file, dependencies);
+        }
+      }
+    } catch (e) {
+      _logger.warn('    Failed to add import statements: $e');
+    }
+  }
+
+  /// Add import statements to a specific file
+  Future<void> _addImportsToFile(File file, Set<String> dependencies) async {
+    try {
+      final content = await file.readAsString();
+      
+      // Check if imports are needed (if the file references dependency classes)
+      bool needsImports = false;
+      for (final dep in dependencies) {
+        final depClasses = _getExpectedClassesForComponent(dep);
+        for (final className in depClasses) {
+          if (content.contains(className)) {
+            needsImports = true;
+            break;
+          }
+        }
+        if (needsImports) break;
+      }
+      
+      if (!needsImports) return;
+      
+      // Find the insertion point (after existing imports)
+      final lines = content.split('\n');
+      int insertIndex = 0;
+      
+      // Find the last import statement
+      for (int i = 0; i < lines.length; i++) {
+        if (lines[i].trim().startsWith('import ')) {
+          insertIndex = i + 1;
+        } else if (lines[i].trim().isEmpty && insertIndex > 0) {
+          // Keep empty lines after imports
+          insertIndex = i + 1;
+        } else if (insertIndex > 0 && lines[i].trim().isNotEmpty) {
+          // Found non-empty line after imports, stop here
+          break;
+        }
+      }
+      
+      // Add imports for dependencies
+      final newImports = <String>[];
+      for (final dep in dependencies) {
+        newImports.add("import 'base_$dep.dart';");
+      }
+      
+      if (newImports.isNotEmpty) {
+        // Insert imports
+        lines.insertAll(insertIndex, newImports);
+        
+        // Add empty line after imports if not already present
+        if (insertIndex + newImports.length < lines.length &&
+            lines[insertIndex + newImports.length].trim().isNotEmpty) {
+          lines.insert(insertIndex + newImports.length, '');
+        }
+        
+        final updatedContent = lines.join('\n');
+        await file.writeAsString(updatedContent);
+        
+        _logger.detail('      Added imports: ${newImports.join(', ')}');
+      }
+      
+    } catch (e) {
+      _logger.warn('      Failed to add imports to ${path.basename(file.path)}: $e');
+    }
+  }
+
+  /// Get expected class names for a component
+  Set<String> _getExpectedClassesForComponent(String componentName) {
+    // Common patterns for component class names
+    final baseClassName = 'Base${componentName[0].toUpperCase()}${componentName.substring(1)}';
+    
+    return {
+      baseClassName,
+      '${componentName[0].toUpperCase()}${componentName.substring(1)}State',
+      '${componentName[0].toUpperCase()}${componentName.substring(1)}Size',
+      '${componentName[0].toUpperCase()}${componentName.substring(1)}Shape',
+      '${componentName[0].toUpperCase()}${componentName.substring(1)}Style',
+      '${componentName[0].toUpperCase()}${componentName.substring(1)}Config',
+      '${componentName[0].toUpperCase()}${componentName.substring(1)}VisualState',
+    };
   }
 }
 
