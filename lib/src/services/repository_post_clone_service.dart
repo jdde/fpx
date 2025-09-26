@@ -1427,8 +1427,18 @@ Please check the latest versions of these packages on [pub.dev](https://pub.dev)
       
       if (!needsImports) return;
       
-      // Find the insertion point (after existing imports)
+      // Check which imports already exist to avoid duplicates
+      final existingImports = <String>{};
       final lines = content.split('\n');
+      
+      for (final line in lines) {
+        final trimmed = line.trim();
+        if (trimmed.startsWith('import ')) {
+          existingImports.add(trimmed);
+        }
+      }
+      
+      // Find the insertion point (after existing imports)
       int insertIndex = 0;
       
       // Find the last import statement
@@ -1444,10 +1454,13 @@ Please check the latest versions of these packages on [pub.dev](https://pub.dev)
         }
       }
       
-      // Add imports for dependencies
+      // Add imports for dependencies that don't already exist
       final newImports = <String>[];
       for (final dep in dependencies) {
-        newImports.add("import 'base_$dep.dart';");
+        final importStatement = "import 'base_$dep.dart';";
+        if (!existingImports.contains(importStatement)) {
+          newImports.add(importStatement);
+        }
       }
       
       if (newImports.isNotEmpty) {
@@ -1464,6 +1477,8 @@ Please check the latest versions of these packages on [pub.dev](https://pub.dev)
         await file.writeAsString(updatedContent);
         
         _logger.detail('      Added imports: ${newImports.join(', ')}');
+      } else {
+        _logger.detail('      All required imports already exist');
       }
       
     } catch (e) {
