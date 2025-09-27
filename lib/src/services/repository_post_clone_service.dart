@@ -262,7 +262,11 @@ vars:
   /// [widget] - The widget information object
   /// [bricksPath] - The path to the __brick__ directory
   Future<void> _copyWidgetFiles(WidgetInfo widget, String bricksPath) async {
-    for (final file in widget.files) {
+    final dartFiles = widget.files.where((f) => f.endsWith('.dart')).toList();
+    final nonDartFiles = widget.files.where((f) => !f.endsWith('.dart')).toList();
+    
+    // Copy non-Dart files as-is
+    for (final file in nonDartFiles) {
       final sourceFile = File(path.join(widget.path, file));
       final targetFile = File(path.join(bricksPath, file));
       
@@ -273,6 +277,114 @@ vars:
       await sourceFile.copy(targetFile.path);
       _logger.detail('    Copied $file to __brick__');
     }
+    
+    // Handle Dart files - merge if multiple, copy if single
+    if (dartFiles.isEmpty) {
+      return;
+    } else if (dartFiles.length == 1) {
+      // Single Dart file - copy as-is
+      final file = dartFiles.first;
+      final sourceFile = File(path.join(widget.path, file));
+      final targetFile = File(path.join(bricksPath, file));
+      
+      await targetFile.parent.create(recursive: true);
+      await sourceFile.copy(targetFile.path);
+      _logger.detail('    Copied $file to __brick__');
+    } else {
+      // Multiple Dart files - merge into a single file
+      await _mergeDartFiles(widget, dartFiles, bricksPath);
+    }
+  }
+
+  /// Merge multiple Dart files into a single file to avoid import issues.
+  /// 
+  /// This method combines all Dart files in a component into a single file,
+  /// removing duplicate imports and preserving all class definitions.
+  /// 
+  /// [widget] - The widget information object
+  /// [dartFiles] - List of Dart file names to merge
+  /// [bricksPath] - The path to the __brick__ directory
+  Future<void> _mergeDartFiles(WidgetInfo widget, List<String> dartFiles, String bricksPath) async {
+    final imports = <String>{};
+    final contents = <String>[];
+    String? primaryFileName;
+    
+    // Sort files to process the main component file first
+    dartFiles.sort((a, b) {
+      // Prioritize files that contain the component name (e.g., base_input.dart for input component)
+      final aContainsName = a.toLowerCase().contains(widget.name.toLowerCase());
+      final bContainsName = b.toLowerCase().contains(widget.name.toLowerCase());
+      
+      if (aContainsName && !bContainsName) return -1;
+      if (!aContainsName && bContainsName) return 1;
+      return a.compareTo(b);
+    });
+    
+    primaryFileName = dartFiles.first;
+    
+    for (final file in dartFiles) {
+      final sourceFile = File(path.join(widget.path, file));
+      final content = await sourceFile.readAsString();
+      
+      // Extract imports and content separately
+      final lines = content.split('\n');
+      final fileImports = <String>[];
+      final fileContent = <String>[];
+      bool inImports = true;
+      
+      for (final line in lines) {
+        final trimmedLine = line.trim();
+        
+        if (inImports && (trimmedLine.startsWith('import ') || trimmedLine.startsWith('export '))) {
+          // Skip relative imports between component files
+          if (!trimmedLine.contains('./') && !trimmedLine.contains('../')) {
+            fileImports.add(line);
+            imports.add(trimmedLine);
+          }
+        } else {
+          if (trimmedLine.isNotEmpty && !trimmedLine.startsWith('//') && !trimmedLine.startsWith('import ') && !trimmedLine.startsWith('export ')) {
+            inImports = false;
+          }
+          
+          if (!inImports) {
+            fileContent.add(line);
+          }
+        }
+      }
+      
+      if (fileContent.isNotEmpty) {
+        contents.add('// === Content from $file ===');
+        contents.addAll(fileContent);
+        contents.add('');
+      }
+      
+      _logger.detail('    Processed $file for merging');
+    }
+    
+    // Create the merged file
+    final mergedContent = StringBuffer();
+    
+    // Add all unique imports first
+    final sortedImports = imports.toList()..sort();
+    for (final import in sortedImports) {
+      mergedContent.writeln(import);
+    }
+    
+    if (sortedImports.isNotEmpty) {
+      mergedContent.writeln();
+    }
+    
+    // Add all content
+    for (final content in contents) {
+      mergedContent.writeln(content);
+    }
+    
+    // Write to the primary file name
+    final targetFile = File(path.join(bricksPath, primaryFileName!));
+    await targetFile.parent.create(recursive: true);
+    await targetFile.writeAsString(mergedContent.toString());
+    
+    _logger.detail('    Merged ${dartFiles.length} Dart files into $primaryFileName');
   }
 
   /// Preprocess widget files to replace foundation constants with actual values.
