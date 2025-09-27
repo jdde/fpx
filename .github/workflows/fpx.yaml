@@ -56,6 +56,9 @@ jobs:
       - name: 📋 Format Coverage
         run: dart pub global activate coverage && dart pub global run coverage:format_coverage --lcov --in=coverage --out=coverage/lcov.info --report-on=lib
 
+      - name: 🚀 Validate Package for Publishing
+        run: dart pub publish --dry-run
+
       - name: 📊 Check Code Coverage
         if: github.event_name == 'pull_request'
         uses: VeryGoodOpenSource/very_good_coverage@v3

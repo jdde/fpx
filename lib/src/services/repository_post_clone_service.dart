@@ -395,7 +395,7 @@ vars:
     }
     
     // Write to the primary file name
-    final targetFile = File(path.join(bricksPath, primaryFileName!));
+    final targetFile = File(path.join(bricksPath, primaryFileName));
     await targetFile.parent.create(recursive: true);
     await targetFile.writeAsString(mergedContent.toString());
     
@@ -706,13 +706,6 @@ vars:
     }
     
     return null;
-  }
-
-  /// Convert a DartObject string representation to a clean format.
-  String _dartObjectToString(String objectString) {
-    // Clean up the DartObject string representation
-    // This is a simple cleanup - in practice you might need more sophisticated parsing
-    return objectString.replaceAll('DartObject(', '').replaceAll(')', '');
   }
 
   /// Parse constants using regex as a fallback method.
