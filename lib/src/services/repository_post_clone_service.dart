@@ -278,7 +278,7 @@ vars:
       _logger.detail('    Copied $file to __brick__');
     }
     
-    // Handle Dart files - merge if multiple, copy if single
+    // Handle Dart files
     if (dartFiles.isEmpty) {
       return;
     } else if (dartFiles.length == 1) {
@@ -291,8 +291,23 @@ vars:
       await sourceFile.copy(targetFile.path);
       _logger.detail('    Copied $file to __brick__');
     } else {
-      // Multiple Dart files - merge into a single file
-      await _mergeDartFiles(widget, dartFiles, bricksPath);
+      // Multiple Dart files - check if they are in nested directories
+      final hasNestedFiles = dartFiles.any((file) => file.contains('/') || file.contains('\\'));
+      
+      if (hasNestedFiles) {
+        // Files are in nested directories - copy preserving structure
+        for (final file in dartFiles) {
+          final sourceFile = File(path.join(widget.path, file));
+          final targetFile = File(path.join(bricksPath, file));
+          
+          await targetFile.parent.create(recursive: true);
+          await sourceFile.copy(targetFile.path);
+          _logger.detail('    Copied $file to __brick__');
+        }
+      } else {
+        // Multiple files in same directory - merge into a single file
+        await _mergeDartFiles(widget, dartFiles, bricksPath);
+      }
     }
   }
 
