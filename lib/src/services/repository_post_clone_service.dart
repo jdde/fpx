@@ -1,5 +1,10 @@
 import 'dart:io';
 
+import 'package:analyzer/dart/analysis/analysis_context_collection.dart';
+import 'package:analyzer/dart/analysis/results.dart';
+import 'package:analyzer/dart/ast/ast.dart';
+import 'package:analyzer/dart/element/element.dart';
+import 'package:analyzer/file_system/physical_file_system.dart';
 import 'package:mason_logger/mason_logger.dart';
 import 'package:path/path.dart' as path;
 
@@ -257,7 +262,11 @@ vars:
   /// [widget] - The widget information object
   /// [bricksPath] - The path to the __brick__ directory
   Future<void> _copyWidgetFiles(WidgetInfo widget, String bricksPath) async {
-    for (final file in widget.files) {
+    final dartFiles = widget.files.where((f) => f.endsWith('.dart')).toList();
+    final nonDartFiles = widget.files.where((f) => !f.endsWith('.dart')).toList();
+    
+    // Copy non-Dart files as-is
+    for (final file in nonDartFiles) {
       final sourceFile = File(path.join(widget.path, file));
       final targetFile = File(path.join(bricksPath, file));
       
@@ -268,6 +277,129 @@ vars:
       await sourceFile.copy(targetFile.path);
       _logger.detail('    Copied $file to __brick__');
     }
+    
+    // Handle Dart files
+    if (dartFiles.isEmpty) {
+      return;
+    } else if (dartFiles.length == 1) {
+      // Single Dart file - copy as-is
+      final file = dartFiles.first;
+      final sourceFile = File(path.join(widget.path, file));
+      final targetFile = File(path.join(bricksPath, file));
+      
+      await targetFile.parent.create(recursive: true);
+      await sourceFile.copy(targetFile.path);
+      _logger.detail('    Copied $file to __brick__');
+    } else {
+      // Multiple Dart files - check if they are in nested directories
+      final hasNestedFiles = dartFiles.any((file) => file.contains('/') || file.contains('\\'));
+      
+      if (hasNestedFiles) {
+        // Files are in nested directories - copy preserving structure
+        for (final file in dartFiles) {
+          final sourceFile = File(path.join(widget.path, file));
+          final targetFile = File(path.join(bricksPath, file));
+          
+          await targetFile.parent.create(recursive: true);
+          await sourceFile.copy(targetFile.path);
+          _logger.detail('    Copied $file to __brick__');
+        }
+      } else {
+        // Multiple files in same directory - merge into a single file
+        await _mergeDartFiles(widget, dartFiles, bricksPath);
+      }
+    }
+  }
+
+  /// Merge multiple Dart files into a single file to avoid import issues.
+  /// 
+  /// This method combines all Dart files in a component into a single file,
+  /// removing duplicate imports and preserving all class definitions.
+  /// 
+  /// [widget] - The widget information object
+  /// [dartFiles] - List of Dart file names to merge
+  /// [bricksPath] - The path to the __brick__ directory
+  Future<void> _mergeDartFiles(WidgetInfo widget, List<String> dartFiles, String bricksPath) async {
+    final imports = <String>{};
+    final contents = <String>[];
+    String? primaryFileName;
+    
+    // Sort files to process the main component file first
+    dartFiles.sort((a, b) {
+      // Prioritize files that contain the component name (e.g., base_input.dart for input component)
+      final aContainsName = a.toLowerCase().contains(widget.name.toLowerCase());
+      final bContainsName = b.toLowerCase().contains(widget.name.toLowerCase());
+      
+      if (aContainsName && !bContainsName) return -1;
+      if (!aContainsName && bContainsName) return 1;
+      return a.compareTo(b);
+    });
+    
+    primaryFileName = dartFiles.first;
+    
+    for (final file in dartFiles) {
+      final sourceFile = File(path.join(widget.path, file));
+      final content = await sourceFile.readAsString();
+      
+      // Extract imports and content separately
+      final lines = content.split('\n');
+      final fileImports = <String>[];
+      final fileContent = <String>[];
+      bool inImports = true;
+      
+      for (final line in lines) {
+        final trimmedLine = line.trim();
+        
+        if (inImports && (trimmedLine.startsWith('import ') || trimmedLine.startsWith('export '))) {
+          // Skip relative imports between component files
+          if (!trimmedLine.contains('./') && !trimmedLine.contains('../')) {
+            fileImports.add(line);
+            imports.add(trimmedLine);
+          }
+        } else {
+          if (trimmedLine.isNotEmpty && !trimmedLine.startsWith('//') && !trimmedLine.startsWith('import ') && !trimmedLine.startsWith('export ')) {
+            inImports = false;
+          }
+          
+          if (!inImports) {
+            fileContent.add(line);
+          }
+        }
+      }
+      
+      if (fileContent.isNotEmpty) {
+        contents.add('// === Content from $file ===');
+        contents.addAll(fileContent);
+        contents.add('');
+      }
+      
+      _logger.detail('    Processed $file for merging');
+    }
+    
+    // Create the merged file
+    final mergedContent = StringBuffer();
+    
+    // Add all unique imports first
+    final sortedImports = imports.toList()..sort();
+    for (final import in sortedImports) {
+      mergedContent.writeln(import);
+    }
+    
+    if (sortedImports.isNotEmpty) {
+      mergedContent.writeln();
+    }
+    
+    // Add all content
+    for (final content in contents) {
+      mergedContent.writeln(content);
+    }
+    
+    // Write to the primary file name
+    final targetFile = File(path.join(bricksPath, primaryFileName!));
+    await targetFile.parent.create(recursive: true);
+    await targetFile.writeAsString(mergedContent.toString());
+    
+    _logger.detail('    Merged ${dartFiles.length} Dart files into $primaryFileName');
   }
 
   /// Preprocess widget files to replace foundation constants with actual values.
@@ -382,13 +514,214 @@ vars:
     }
   }
 
-  /// Parse constants from a single foundation file.
+  /// Parse constants from a single foundation file using Dart analyzer.
   /// 
   /// [file] - The foundation file to parse
   /// [className] - The name of the class containing constants
   /// 
   /// Returns a map of constant names to their values with const prefix when needed.
   Future<Map<String, String>> _parseConstantsFromFile(File file, String className) async {
+    final constants = <String, String>{};
+    
+    try {
+      // First try using the Dart analyzer for proper constant resolution
+      final analyzerConstants = await _parseConstantsWithAnalyzer(file, className);
+      if (analyzerConstants.isNotEmpty) {
+        return analyzerConstants;
+      }
+      
+      // Fallback to regex parsing if analyzer fails
+      final regexConstants = await _parseConstantsWithRegex(file, className);
+      return regexConstants;
+    } catch (e) {
+      return constants;
+    }
+  }
+
+  /// Parse constants using the Dart analyzer for accurate resolution.
+  /// 
+  /// [file] - The foundation file to parse
+  /// [className] - The name of the class containing constants
+  /// 
+  /// Returns a map of constant names to their resolved values.
+  Future<Map<String, String>> _parseConstantsWithAnalyzer(File file, String className) async {
+    final constants = <String, String>{};
+    
+    try {
+      // Create analysis context for the file
+      final collection = AnalysisContextCollection(
+        includedPaths: [file.parent.path],
+        resourceProvider: PhysicalResourceProvider.INSTANCE,
+      );
+      
+      final context = collection.contextFor(file.path);
+      final result = await context.currentSession.getResolvedUnit(file.path);
+      
+      if (result is ResolvedUnitResult) {
+        final unit = result.unit;
+        
+        // Find the class declaration
+        for (final declaration in unit.declarations) {
+          if (declaration is ClassDeclaration && declaration.name.lexeme == className) {
+            // Find all static const/final fields
+            for (final member in declaration.members) {
+              if (member is FieldDeclaration && member.isStatic && (member.fields.isConst || member.fields.isFinal)) {
+                for (final variable in member.fields.variables) {
+                  final fieldName = variable.name.lexeme;
+                  final initializer = variable.initializer;
+                  
+                  if (initializer != null) {
+                    // Try to evaluate the constant expression
+                    final constantValue = _evaluateConstantExpression(initializer, result.libraryElement);
+                    
+                    if (constantValue != null) {
+                      final fullName = '$className.$fieldName';
+                      constants[fullName] = constantValue;
+                      _logger.info('Analyzer resolved: $fullName = $constantValue');
+                    }
+                  }
+                }
+              }
+            }
+            break;
+          }
+        }
+      }
+    } catch (e) {
+      _logger.detail('Analyzer parsing failed for ${file.path}: $e');
+    }
+    
+    return constants;
+  }
+
+  /// Evaluate a constant expression to its string representation.
+  /// 
+  /// [expression] - The AST expression to evaluate
+  /// [library] - The library element for context
+  /// 
+  /// Returns the evaluated constant as a string, or null if evaluation fails.
+  String? _evaluateConstantExpression(Expression expression, LibraryElement library) {
+    try {
+      // Handle different types of constant expressions
+      if (expression is IntegerLiteral) {
+        return expression.value.toString();
+      }
+      
+      if (expression is DoubleLiteral) {
+        return expression.value.toString();
+      }
+      
+      if (expression is BooleanLiteral) {
+        return expression.value.toString();
+      }
+      
+      if (expression is StringLiteral) {
+        return expression.stringValue;
+      }
+      
+      if (expression is SimpleIdentifier) {
+        // Try to resolve identifier references
+        final element = expression.staticElement;
+        if (element is FieldElement && element.isStatic && element.isConst) {
+          final constantValue = element.computeConstantValue();
+          if (constantValue != null && constantValue.hasKnownValue) {
+            // Handle different types of constant values
+            if (constantValue.toDoubleValue() != null) {
+              return constantValue.toDoubleValue().toString();
+            }
+            if (constantValue.toIntValue() != null) {
+              return constantValue.toIntValue().toString();
+            }
+            if (constantValue.toBoolValue() != null) {
+              return constantValue.toBoolValue().toString();
+            }
+            if (constantValue.toStringValue() != null) {
+              return '"${constantValue.toStringValue()}"';
+            }
+          }
+        }
+      }
+      
+      if (expression is InstanceCreationExpression) {
+        // Handle constructor calls like EdgeInsets.only(right: 8.0), Color(0xFF123456)
+        final constructorName = expression.constructorName.toString();
+        final arguments = expression.argumentList.arguments;
+        
+        // Build the constructor call string with resolved arguments
+        final resolvedArgs = <String>[];
+        for (final arg in arguments) {
+          if (arg is NamedExpression) {
+            final argName = arg.name.label.name;
+            final argValue = _evaluateConstantExpression(arg.expression, library);
+            if (argValue != null) {
+              resolvedArgs.add('$argName: $argValue');
+            } else {
+              return null; // Can't resolve all arguments
+            }
+          } else {
+            final argValue = _evaluateConstantExpression(arg, library);
+            if (argValue != null) {
+              resolvedArgs.add(argValue);
+            } else {
+              return null; // Can't resolve all arguments
+            }
+          }
+        }
+        
+        return 'const $constructorName(${resolvedArgs.join(', ')})';
+      }
+      
+      if (expression is MethodInvocation) {
+        // Handle method calls like BorderRadius.circular(8.0)
+        final target = expression.target?.toString() ?? '';
+        final methodName = expression.methodName.name;
+        final arguments = expression.argumentList.arguments;
+        
+        final resolvedArgs = <String>[];
+        for (final arg in arguments) {
+          final argValue = _evaluateConstantExpression(arg, library);
+          if (argValue != null) {
+            resolvedArgs.add(argValue);
+          } else {
+            return null;
+          }
+        }
+        
+        final fullMethodName = target.isNotEmpty ? '$target.$methodName' : methodName;
+        return 'const $fullMethodName(${resolvedArgs.join(', ')})';
+      }
+      
+      // For property access like FontWeight.w400, UiColors.primary
+      if (expression is PropertyAccess) {
+        return expression.toString();
+      }
+      
+      // For prefixed identifiers like UiSpacing.xs
+      if (expression is PrefixedIdentifier) {
+        return expression.toString();
+      }
+      
+    } catch (e) {
+      _logger.detail('Failed to evaluate expression: $e');
+    }
+    
+    return null;
+  }
+
+  /// Convert a DartObject string representation to a clean format.
+  String _dartObjectToString(String objectString) {
+    // Clean up the DartObject string representation
+    // This is a simple cleanup - in practice you might need more sophisticated parsing
+    return objectString.replaceAll('DartObject(', '').replaceAll(')', '');
+  }
+
+  /// Parse constants using regex as a fallback method.
+  /// 
+  /// [file] - The foundation file to parse
+  /// [className] - The name of the class containing constants
+  /// 
+  /// Returns a map of constant names to their values with const prefix when needed.
+  Future<Map<String, String>> _parseConstantsWithRegex(File file, String className) async {
     final constants = <String, String>{};
     final rawConstants = <String, String>{}; // Store raw values for reference resolution
     
@@ -431,8 +764,6 @@ vars:
         // Resolve constant references within the same class
         final resolvedValue = _resolveConstantReferences(cleanValue, rawConstants);
         
-        _logger.info('Processing: $constantName = $cleanValue -> $resolvedValue');
-        
         // Check if this is a complex object that should be handled specially
         final replacementValue = _processConstantValue(
           declarationType, 
@@ -469,23 +800,41 @@ vars:
     
     // Keep resolving until no more references are found (handles chains like xs -> spacing2 -> 8.0)
     bool hasChanges = true;
-    int maxIterations = 10; // Prevent infinite loops
+    int maxIterations = 15; // Prevent infinite loops
     int iterations = 0;
     
     while (hasChanges && iterations < maxIterations) {
       hasChanges = false;
       iterations++;
       
-      // Look for simple identifier references (single word that matches a constant name)
+      // Look for identifier references and replace them with their resolved values
       for (final entry in rawConstants.entries) {
         final constantName = entry.key;
         final constantValue = entry.value;
         
-        // Only replace if the value is exactly the constant name (not part of a larger expression)
+        // Check if the value is exactly the constant name (simple reference)
         if (resolvedValue.trim() == constantName) {
-          resolvedValue = constantValue;
+          final recursivelyResolved = _resolveConstantReferences(constantValue, rawConstants);
+          resolvedValue = recursivelyResolved;
           hasChanges = true;
           break; // Start over with the new value
+        }
+        
+        // Check for the constant name used within expressions (e.g., "EdgeInsets.only(right: xs)")
+        // Use word boundaries to ensure we don't replace partial matches
+        final constantRegex = RegExp(r'\b' + RegExp.escape(constantName) + r'\b');
+        if (constantRegex.hasMatch(resolvedValue)) {
+          // Recursively resolve the referenced constant first
+          final referencedValue = _resolveConstantReferences(constantValue, rawConstants);
+          
+          // Replace the constant name with its resolved value
+          final newResolvedValue = resolvedValue.replaceAll(constantRegex, referencedValue);
+          
+          if (newResolvedValue != resolvedValue) {
+            resolvedValue = newResolvedValue;
+            hasChanges = true;
+            break; // Start over with the new value
+          }
         }
       }
     }
@@ -586,6 +935,7 @@ vars:
       RegExp(r'^BorderRadius\.(all|circular)\([^)]+\)$'), // Simple BorderRadius
       RegExp(r'^Duration\([^)]+\)$'), // Duration constructors
       RegExp(r'^Color\(0x[A-Fa-f0-9]{8}\)$'), // Simple Color constructors
+      RegExp(r'^SizedBox\([^)]+\)$'), // SizedBox constructors
     ];
 
     return simplePatterns.any((pattern) => pattern.hasMatch(constantValue.trim()));
@@ -1204,8 +1554,18 @@ Please check the latest versions of these packages on [pub.dev](https://pub.dev)
       
       if (!needsImports) return;
       
-      // Find the insertion point (after existing imports)
+      // Check which imports already exist to avoid duplicates
+      final existingImports = <String>{};
       final lines = content.split('\n');
+      
+      for (final line in lines) {
+        final trimmed = line.trim();
+        if (trimmed.startsWith('import ')) {
+          existingImports.add(trimmed);
+        }
+      }
+      
+      // Find the insertion point (after existing imports)
       int insertIndex = 0;
       
       // Find the last import statement
@@ -1221,10 +1581,13 @@ Please check the latest versions of these packages on [pub.dev](https://pub.dev)
         }
       }
       
-      // Add imports for dependencies
+      // Add imports for dependencies that don't already exist
       final newImports = <String>[];
       for (final dep in dependencies) {
-        newImports.add("import 'base_$dep.dart';");
+        final importStatement = "import 'base_$dep.dart';";
+        if (!existingImports.contains(importStatement)) {
+          newImports.add(importStatement);
+        }
       }
       
       if (newImports.isNotEmpty) {
@@ -1241,6 +1604,8 @@ Please check the latest versions of these packages on [pub.dev](https://pub.dev)
         await file.writeAsString(updatedContent);
         
         _logger.detail('      Added imports: ${newImports.join(', ')}');
+      } else {
+        _logger.detail('      All required imports already exist');
       }
       
     } catch (e) {
