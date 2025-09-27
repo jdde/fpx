@@ -487,6 +487,122 @@ class PrimaryButton extends StatelessWidget {
       verify(() => logger.success('✅ Repository processing completed successfully')).called(1);
     });
 
+    test('processClonedRepository with multiple files in same directory merges them', () async {
+      // Create a repository with multiple dart files in the same directory
+      final repoDir = Directory('test-repo');
+      await repoDir.create(recursive: true);
+
+      final pubspecFile = File('test-repo/pubspec.yaml');
+      await pubspecFile.writeAsString('''
+name: test_repo
+version: 1.5.0
+dependencies:
+  flutter:
+    sdk: flutter
+''');
+
+      // Create component directory
+      final buttonDir = Directory('test-repo/lib/src/components/button');
+      await buttonDir.create(recursive: true);
+      
+      // Create main button file
+      final buttonFile = File('test-repo/lib/src/components/button/button.dart');
+      await buttonFile.writeAsString('''
+import 'package:flutter/material.dart';
+
+class Button extends StatelessWidget {
+  const Button({Key? key, required this.text}) : super(key: key);
+  
+  final String text;
+  
+  @override
+  Widget build(BuildContext context) {
+    return ElevatedButton(
+      onPressed: () {},
+      child: Text(text),
+    );
+  }
+}
+''');
+
+      // Create button types file (in same directory)
+      final buttonTypesFile = File('test-repo/lib/src/components/button/button_types.dart');
+      await buttonTypesFile.writeAsString('''
+enum ButtonType {
+  primary,
+  secondary,
+  danger,
+}
+
+enum ButtonSize {
+  small,
+  medium,
+  large,
+}
+''');
+
+      // Create button utils file (in same directory)
+      final buttonUtilsFile = File('test-repo/lib/src/components/button/button_utils.dart');
+      await buttonUtilsFile.writeAsString('''
+import 'package:flutter/material.dart';
+import './button_types.dart';
+
+class ButtonUtils {
+  static Color getButtonColor(ButtonType type) {
+    switch (type) {
+      case ButtonType.primary:
+        return Colors.blue;
+      case ButtonType.secondary:
+        return Colors.grey;
+      case ButtonType.danger:
+        return Colors.red;
+    }
+  }
+}
+''');
+
+      // Run the service
+      await service.processClonedRepository(
+        repositoryName: 'test-repo',
+        repositoryPath: 'test-repo',
+        repositoryUrl: 'https://github.com/jdde/repo.git',
+      );
+
+      // Check brick.yaml was created
+      final brickYamlFile = File('test-repo/lib/src/components/button/brick.yaml');
+      expect(await brickYamlFile.exists(), isTrue);
+      
+      if (await brickYamlFile.exists()) {
+        final content = await brickYamlFile.readAsString();
+        expect(content.contains('version: 1.5.0'), isTrue);
+        expect(content.contains('name: button'), isTrue);
+      }
+
+      // Check that multiple files in same directory were merged into primary file
+      final mergedFile = File('test-repo/lib/src/components/button/__brick__/button.dart');
+      expect(await mergedFile.exists(), isTrue);
+      
+      // The other individual files should NOT exist as they were merged
+      final buttonTypesInBrick = File('test-repo/lib/src/components/button/__brick__/button_types.dart');
+      final buttonUtilsInBrick = File('test-repo/lib/src/components/button/__brick__/button_utils.dart');
+      expect(await buttonTypesInBrick.exists(), isFalse);
+      expect(await buttonUtilsInBrick.exists(), isFalse);
+      
+      // Check the merged file contains content from all files
+      if (await mergedFile.exists()) {
+        final mergedContent = await mergedFile.readAsString();
+        expect(mergedContent.contains('class Button extends StatelessWidget'), isTrue);
+        expect(mergedContent.contains('enum ButtonType'), isTrue);
+        expect(mergedContent.contains('class ButtonUtils'), isTrue);
+        expect(mergedContent.contains('=== Content from button.dart ==='), isTrue);
+        expect(mergedContent.contains('=== Content from button_types.dart ==='), isTrue);
+        expect(mergedContent.contains('=== Content from button_utils.dart ==='), isTrue);
+      }
+
+      verify(() => logger.info('🔧 Processing cloned repository "test-repo"...')).called(1);
+      verify(() => logger.success('✅ Repository processing completed successfully')).called(1);
+    });
+
     test('_addBricksToRepository handles error in widget processing', () async {
       // Create a repository structure that will cause errors during processing
       final repoDir = Directory('test-repo');

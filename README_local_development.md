@@ -62,6 +62,14 @@ dart run bin/fpx.dart init
 dart run bin/fpx.dart list
 ```
 
+### Debugging a single component in an example project:
+Make sure to adjust the hardcoded paths in your command.
+In this example we use the locally checked out fpx to test the post processing. To find a problem && integrate a new bugfix into fpx.
+```sh
+rm base_input.dart && rm input_types.dart && rm input_variants.dart && dart run /Users/unping/Documents/fpx/bin/fpx.dart repo update --no-pull && dart run /Users/unping/Documents/fpx/bin/fpx.dart add input && dart analyze base_input.dart
+```
+
+
 ## Running Tests with Coverage 🧪
 
 ### Running Tests
