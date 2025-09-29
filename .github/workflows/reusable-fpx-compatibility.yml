@@ -397,6 +397,10 @@ jobs:
           echo "3. Check for missing dependencies in the component's import statements"
           echo "4. Review the full step outputs above for detailed error messages"
           echo "5. Download the artifacts below to inspect generated files locally"
+          echo ""
+          echo "📚 For component developers:"
+          echo "   → Import conflicts are a common issue when building multi-file components"
+          echo "   → See import best practices: https://github.com/jdde/fpx#-important-for-component-developers"
           echo "=========================================="
 
       - name: Upload fpx compatibility artifacts
