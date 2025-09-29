@@ -62,39 +62,126 @@ jobs:
       - name: List available components
         run: |
           cd "$RUNNER_TEMP/test_project"
-          echo "Available components:"
-          fpx list
+          echo "=== Available Components ==="
+          echo "Running: fpx list"
+          
+          # Disable exit on error to capture output
+          set +e
+          fpx_list_output=$(fpx list 2>&1)
+          fpx_list_exit_code=$?
+          set -e
+          
+          echo "$fpx_list_output"
+          
+          if [ $fpx_list_exit_code -ne 0 ]; then
+            echo ""
+            echo "⚠️ fpx list command failed with exit code $fpx_list_exit_code"
+            echo "This might indicate repository setup issues"
+          else
+            echo ""
+            echo "Looking for component: ${{ inputs.component_name }}"
+            if echo "$fpx_list_output" | grep -q "${{ inputs.component_name }}"; then
+              echo "✅ Component '${{ inputs.component_name }}' found in available components"
+            else
+              echo "❌ Component '${{ inputs.component_name }}' NOT found in available components"
+              echo "Available component names:"
+              echo "$fpx_list_output" | grep -E "^  [a-zA-Z]" || echo "  (no components listed or different format)"
+            fi
+          fi
+          echo "=== End Available Components ==="
 
       - name: Add component to test project
         id: add_component
         run: |
           cd "$RUNNER_TEMP/test_project"
           echo "Adding component: ${{ inputs.component_name }}"
-          fpx add "${{ inputs.component_name }}" --path lib/components
+          
+          # Disable exit on error to capture and display output
+          set +e
+          
+          # Run fpx add with verbose output
+          echo "Running: fpx add \"${{ inputs.component_name }}\" --path lib/components"
+          fpx_output=$(fpx add "${{ inputs.component_name }}" --path lib/components 2>&1)
+          fpx_exit_code=$?
+          
+          # Re-enable exit on error
+          set -e
+          
+          echo "=== fpx add Output ==="
+          echo "$fpx_output"
+          echo "=== End fpx add Output ==="
+          echo "fpx add exit code: $fpx_exit_code"
+          
+          if [ $fpx_exit_code -ne 0 ]; then
+            echo ""
+            echo "❌ Failed to add component '${{ inputs.component_name }}'"
+            echo "This could mean:"
+            echo "  1. Component '${{ inputs.component_name }}' does not exist in the repository"
+            echo "  2. Component has configuration issues"
+            echo "  3. fpx repository is not properly set up"
+            echo ""
+            echo "Available components are listed above in the previous step"
+            exit 1
+          else
+            echo ""
+            echo "✅ Component '${{ inputs.component_name }}' added successfully"
+          fi
         continue-on-error: false
 
       - name: Check component files
         run: |
           cd "$RUNNER_TEMP/test_project"
-          echo "Files created:"
-          find lib/components -name "*.dart" -type f | head -20
+          echo "=== Component Files Created ==="
+          component_files=$(find lib/components -name "*.dart" -type f 2>/dev/null || true)
+          
+          if [ -z "$component_files" ]; then
+            echo "❌ No .dart files found in lib/components!"
+            echo "This suggests the component was not properly installed."
+            echo ""
+            echo "Directory structure:"
+            find lib/components -type f 2>/dev/null || echo "lib/components directory not found or empty"
+            exit 1
+          else
+            echo "✅ Component files found:"
+            echo "$component_files" | head -20
+            echo ""
+            echo "Total component files: $(echo "$component_files" | wc -l)"
+          fi
+          echo "=== End Component Files ==="
           
       - name: Analyze dependencies with dart analyze
         id: analyze_deps
         run: |
           cd "$RUNNER_TEMP/test_project"
-          echo "Running dart analyze to check for dependency issues..."
-          dart analyze 2>&1 | tee analyze_output.txt || true
+          echo "=== Running Initial Dependency Analysis ==="
+          echo "Running: dart analyze"
           
-          # Check if there are any missing dependency errors
-          if grep -q "package:" analyze_output.txt; then
-            echo "Found potential dependency issues:"
-            grep "package:" analyze_output.txt || true
+          # Disable exit on error to capture output
+          set +e
+          dart analyze 2>&1 | tee analyze_output.txt
+          analyze_exit_code=$?
+          set -e
+          
+          echo ""
+          echo "Dart analyze exit code: $analyze_exit_code"
+          echo ""
+          
+          # Check for missing dependency errors (more comprehensive patterns)
+          if grep -E "(package:.* doesn't exist|Target of URI doesn't exist|not found|Cannot resolve|package:.* not found)" analyze_output.txt; then
+            echo "❌ Found dependency-related issues:"
+            echo ""
+            grep -E "(package:.* doesn't exist|Target of URI doesn't exist|not found|Cannot resolve|package:.* not found)" analyze_output.txt | head -10 || true
             echo "dependency_issues=true" >> $GITHUB_OUTPUT
+          elif grep -q "error •" analyze_output.txt; then
+            echo "⚠️ Found other analysis errors (not dependency-related):"
+            echo ""
+            grep "error •" analyze_output.txt | head -5 || true
+            echo "dependency_issues=false" >> $GITHUB_OUTPUT
           else
-            echo "No dependency issues found"
+            echo "✅ No dependency issues found in initial analysis"
             echo "dependency_issues=false" >> $GITHUB_OUTPUT
           fi
+          echo "=== End Initial Dependency Analysis ==="
 
       - name: Extract third-party dependencies
         id: extract_deps
@@ -146,23 +233,44 @@ jobs:
           cd "$RUNNER_TEMP/test_project"
           echo "Testing component compilation..."
           
+          # Disable exit on error for this section to capture and display all output
+          set +e
+          
           # Run flutter analyze and capture output
+          echo "Running: flutter analyze --no-pub"
           analyze_output=$(flutter analyze --no-pub 2>&1)
           analyze_exit_code=$?
           
+          # Re-enable exit on error
+          set -e
+          
+          echo "=== Flutter Analyze Output ==="
           echo "$analyze_output"
+          echo "=== End Flutter Analyze Output ==="
+          echo "Flutter analyze exit code: $analyze_exit_code"
           
           # Check if there are any errors in the output (even if exit code is 0)
           if echo "$analyze_output" | grep -q "error •"; then
-            echo "Component compilation failed - errors found in analysis"
+            echo ""
+            echo "❌ Component compilation failed - errors found in analysis output"
+            echo "Errors detected in the analysis output above"
             echo "compilation_success=false" >> $GITHUB_OUTPUT
+            
+            # Extract and display specific error lines for easier debugging
+            echo ""
+            echo "=== Specific Errors Found ==="
+            echo "$analyze_output" | grep "error •" || true
+            echo "=== End Specific Errors ==="
             exit 1
           elif [ $analyze_exit_code -ne 0 ]; then
-            echo "Component compilation failed - analysis command failed"
+            echo ""
+            echo "❌ Component compilation failed - flutter analyze command failed with exit code $analyze_exit_code"
+            echo "Full output is shown above"
             echo "compilation_success=false" >> $GITHUB_OUTPUT
             exit 1
           else
-            echo "Component compiles successfully"
+            echo ""
+            echo "✅ Component compiles successfully"
             echo "compilation_success=true" >> $GITHUB_OUTPUT
           fi
 
@@ -185,6 +293,7 @@ jobs:
       - name: Generate fpx compatibility report
         run: |
           cd "$RUNNER_TEMP/test_project"
+          echo "=== Generating Compatibility Report ==="
           echo "## fpx Compatibility Report" > fpx_compatibility_report.md
           echo "" >> fpx_compatibility_report.md
           echo "**Component:** ${{ inputs.component_name }}" >> fpx_compatibility_report.md
@@ -196,18 +305,24 @@ jobs:
             echo "✅ **fpx Component Installation:** Success" >> fpx_compatibility_report.md
           else
             echo "❌ **fpx Component Installation:** Failed" >> fpx_compatibility_report.md
+            echo "" >> fpx_compatibility_report.md
+            echo "**Installation Error Details:** Check the 'Add component to test project' step output above for specific error messages." >> fpx_compatibility_report.md
           fi
           
           if [ "${{ steps.test_compile.outputs.compilation_success }}" = "true" ]; then
             echo "✅ **Component Compilation:** Success" >> fpx_compatibility_report.md
           else
             echo "❌ **Component Compilation:** Failed" >> fpx_compatibility_report.md
+            echo "" >> fpx_compatibility_report.md
+            echo "**Compilation Error Details:** Check the 'Test compilation' step output above for specific error messages and analyze output." >> fpx_compatibility_report.md
           fi
           
           if [ "${{ steps.analyze_deps.outputs.dependency_issues }}" = "false" ]; then
             echo "✅ **Dependency Analysis:** No issues found" >> fpx_compatibility_report.md
           else
             echo "⚠️ **Dependency Analysis:** Issues detected" >> fpx_compatibility_report.md
+            echo "" >> fpx_compatibility_report.md
+            echo "**Dependency Issues Details:** Check the 'Analyze dependencies' step output above for specific dependency errors." >> fpx_compatibility_report.md
           fi
           
           if [ -n "${{ steps.extract_deps.outputs.third_party_deps }}" ]; then
@@ -225,6 +340,68 @@ jobs:
           echo "**Generated on:** $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> fpx_compatibility_report.md
           
           cat fpx_compatibility_report.md
+
+      - name: Debug Summary (Always Runs)
+        if: always()
+        run: |
+          cd "$RUNNER_TEMP/test_project" || cd /tmp
+          echo ""
+          echo "=========================================="
+          echo "🔍 DEBUGGING SUMMARY - fpx Compatibility Test"
+          echo "=========================================="
+          echo "Component: ${{ inputs.component_name }}"
+          echo "Repository: ${{ github.repository }}"
+          echo "Workflow Status Summary:"
+          echo "  - Add Component: ${{ steps.add_component.outcome }}"
+          echo "  - Test Compile: ${{ steps.test_compile.outcome }}"
+          echo "  - Analyze Deps: ${{ steps.analyze_deps.outcome }}"
+          echo ""
+          
+          if [ "${{ steps.add_component.outcome }}" != "success" ]; then
+            echo "❌ Component installation failed"
+            echo "   → Check the 'Add component to test project' step above for fpx error details"
+            echo "   → Verify the component name is correct by checking 'List available components' step"
+            echo ""
+          fi
+          
+          if [ "${{ steps.test_compile.outcome }}" != "success" ]; then
+            echo "❌ Component compilation failed" 
+            echo "   → Check the 'Test compilation' step above for flutter analyze errors"
+            echo "   → Look for specific error messages in the Flutter Analyze Output section"
+            echo ""
+          fi
+          
+          # Show project structure for debugging
+          echo "📁 Project Structure:"
+          if [ -d "lib/components" ]; then
+            echo "lib/components contents:"
+            ls -la lib/components/ 2>/dev/null || echo "   (empty or inaccessible)"
+            echo ""
+            echo "Dart files in components:"
+            find lib/components -name "*.dart" 2>/dev/null | head -10 || echo "   (no .dart files found)"
+          else
+            echo "❌ lib/components directory does not exist"
+          fi
+          echo ""
+          
+          # Show analyze output if it exists
+          if [ -f "analyze_output.txt" ] && [ -s "analyze_output.txt" ]; then
+            echo "📋 Latest Analysis Output (first 20 lines):"
+            head -20 analyze_output.txt
+            echo ""
+          fi
+          
+          echo "🔧 Troubleshooting Tips:"
+          echo "1. Check if component '${{ inputs.component_name }}' exists in the available components list"
+          echo "2. Verify the component's fpx.yaml configuration is correct"
+          echo "3. Check for missing dependencies in the component's import statements"
+          echo "4. Review the full step outputs above for detailed error messages"
+          echo "5. Download the artifacts below to inspect generated files locally"
+          echo ""
+          echo "📚 For component developers:"
+          echo "   → Import conflicts are a common issue when building multi-file components"
+          echo "   → See import best practices: https://github.com/jdde/fpx#-important-for-component-developers"
+          echo "=========================================="
 
       - name: Upload fpx compatibility artifacts
         uses: actions/upload-artifact@v4
