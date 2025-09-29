@@ -140,6 +140,39 @@ repositories:
 
 Want to make your component library fpx-compatible? Here's how to set it up:
 
+### 🚨 Important for Component Developers
+
+When building components with multiple files, **be very careful with imports** as fpx merges all files into a single component file during the copy process.
+
+**Import Conflicts Example:**
+```dart
+// ❌ PROBLEMATIC: These imports will conflict when files are merged
+// File A: my_button.dart
+import 'package:flutter/widgets.dart';  // Basic widgets
+
+// File B: my_button_styles.dart  
+import 'package:flutter/cupertino.dart'; // Includes widgets + Cupertino
+```
+
+When fpx merges these files, both imports will be present in the final component file, causing conflicts since `cupertino.dart` already includes all widgets from `widgets.dart`.
+
+**Best Practices:**
+- ✅ **Use the most specific import** that covers all needed widgets across all component files
+- ✅ **Test your components** by running `fpx add your_component` in a test project
+- ✅ **Prefer `material.dart` or `cupertino.dart`** over `widgets.dart` if you need platform-specific widgets
+- ✅ **Document required imports** in your component's README when using external packages
+
+**Recommended Import Strategy:**
+```dart
+// ✅ GOOD: Use the most comprehensive import needed
+import 'package:flutter/material.dart'; // Includes widgets + Material Design
+// OR
+import 'package:flutter/cupertino.dart'; // Includes widgets + Cupertino
+
+// For external packages, ensure consistency across all component files
+import 'package:your_package/your_package.dart';
+```
+
 ### 1. Create fpx.yaml Configuration
 
 Add an `fpx.yaml` file to your repository root:
