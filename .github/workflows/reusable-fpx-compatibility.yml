@@ -415,10 +415,10 @@ jobs:
         with:
           name: fpx-compatibility-results-${{ inputs.component_name }}
           path: |
-            ${{ env.RUNNER_TEMP }}/test_project/analyze_output.txt
-            ${{ env.RUNNER_TEMP }}/test_project/fpx_compatibility_report.md
-            ${{ env.RUNNER_TEMP }}/test_project/lib/components/**/*.dart
-            ${{ env.RUNNER_TEMP }}/test_project/lib/components/**/README.md
+            ${{ runner.temp }}/test_project/analyze_output.txt
+            ${{ runner.temp }}/test_project/fpx_compatibility_report.md
+            ${{ runner.temp }}/test_project/lib/components/**/*.dart
+            ${{ runner.temp }}/test_project/lib/components/**/README.md
           retention-days: 30
 
     outputs:
