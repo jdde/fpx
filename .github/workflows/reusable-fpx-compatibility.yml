@@ -419,7 +419,7 @@ jobs:
             ${{ runner.temp }}/test_project/fpx_compatibility_report.md
             ${{ runner.temp }}/test_project/lib/components/**/*.dart
             ${{ runner.temp }}/test_project/lib/components/**/README.md
-          retention-days: 30
+          retention-days: 14
 
     outputs:
       fpx_compatible: ${{ steps.add_component.outcome == 'success' }}
