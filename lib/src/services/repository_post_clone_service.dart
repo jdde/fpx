@@ -352,7 +352,7 @@ vars:
         
         if (inImports && (trimmedLine.startsWith('import ') || trimmedLine.startsWith('export '))) {
           // Skip relative imports between component files
-          if (!trimmedLine.contains('./') && !trimmedLine.contains('../')) {
+          if (!trimmedLine.contains('./') && !trimmedLine.contains('../') && !(!trimmedLine.contains(':') && trimmedLine.contains('.dart'))) {
             fileImports.add(line);
             imports.add(trimmedLine);
           }
