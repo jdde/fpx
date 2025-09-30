@@ -9,7 +9,7 @@ environment:
   sdk: ^3.5.0
 
 dependencies:
-  analyzer: ^7.7.1
+  analyzer: ">=7.7.1 <9.0.0"
   args: ^2.5.0
   cli_completion: ^0.5.1
   mason: ^0.1.1
