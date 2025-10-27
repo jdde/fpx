@@ -410,7 +410,7 @@ jobs:
           echo "=========================================="
 
       - name: Upload fpx compatibility artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         if: always()
         with:
           name: fpx-compatibility-results-${{ inputs.component_name }}
